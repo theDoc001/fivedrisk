@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|WebFetch|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$TOOL_INPUT' | python -m fivedrisk score -"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$TOOL_RESULT' | python -m fivedrisk score --dry-run -"
+          }
+        ]
+      }
+    ]
+  }
+}

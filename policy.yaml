@@ -1,0 +1,86 @@
+# 5D Risk Governance Engine — DotOS Default Policy
+# Aligned with Governance Spec v0.3 (§12-19)
+# Version: 0.2.0 | Tier: Standard (4-band)
+
+version: "0.2.0"
+tier: "standard"
+
+# 4-Band normalized score thresholds (§12.4)
+# Score range 0-3 (normalized from weighted composite)
+bands:
+  yellow_score: 1.0    # Moderate risk
+  orange_score: 1.8    # High risk — mandatory approval
+  red_score: 2.5       # Critical — deny by default
+
+# Single-axis spike thresholds
+thresholds:
+  red_threshold: 4       # any dim >= this → RED
+  orange_threshold: 3    # any dim >= this → ORANGE
+  # Legacy 3-band compat
+  stop_threshold: 4
+  ask_threshold: 3
+  composite_ask: 8.0
+
+# Dimension weights (§12.3)
+weights:
+  data_sensitivity: 1.2   # DS: highest (0.30 relative)
+  tool_privilege: 1.0      # TP: privilege escalation
+  reversibility: 1.5       # R: irreversible is always worse
+  external_impact: 0.8     # EI: external blast radius
+  autonomy_context: 0.8    # AC: oversight modifies, doesn't dominate
+
+# Retry budget per task
+retry_budget: 5
+
+# Tool classification baselines
+tool_defaults:
+  Read:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Glob:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Grep:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Edit:
+    tool_privilege: 1
+    reversibility: 1
+    external_impact: 0
+  Write:
+    tool_privilege: 1
+    reversibility: 1
+    external_impact: 0
+  Bash:
+    tool_privilege: 2
+    reversibility: 2
+    external_impact: 1
+  WebFetch:
+    tool_privilege: 1
+    reversibility: 0
+    external_impact: 1
+  WebSearch:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+
+# Bash command-specific overrides
+bash_overrides:
+  "rm -rf":
+    tool_privilege: 4
+    reversibility: 4
+  "docker":
+    tool_privilege: 3
+    reversibility: 2
+  "git push --force":
+    tool_privilege: 3
+    reversibility: 4
+  "curl.*POST":
+    tool_privilege: 2
+    external_impact: 3
+  "pip install":
+    tool_privilege: 2
+    reversibility: 1

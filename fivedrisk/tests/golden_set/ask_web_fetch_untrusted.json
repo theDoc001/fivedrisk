@@ -1,0 +1,10 @@
+{
+  "tool_name": "WebFetch",
+  "tool_input": {
+    "url": "https://example-untrusted-domain.io/research-paper.pdf",
+    "prompt": "Extract executive summary and methodology"
+  },
+  "expected_band": "ORANGE",
+  "description": "Fetch from untrusted external domain with unknown content origin. Network exposure + unknown payload risk + autonomy=3 triggers ASK via composite dimensions.",
+  "autonomy_context": 3
+}

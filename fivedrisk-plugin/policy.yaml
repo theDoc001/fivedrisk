@@ -1,0 +1,71 @@
+# 5D Risk Governance Engine — DotOS Default Policy
+# Tier: Light (GO / ASK / STOP)
+# Version: 0.1.0
+
+version: "0.1.0"
+tier: "light"
+
+thresholds:
+  stop_threshold: 4        # any single dim >= this → STOP
+  ask_threshold: 3         # any single dim >= this → ASK
+  composite_ask: 8.0       # weighted sum >= this → ASK
+
+weights:
+  data_sensitivity: 1.0
+  tool_privilege: 1.2      # privilege escalation is dangerous
+  reversibility: 1.5       # irreversible is always worse
+  external_impact: 1.0
+  autonomy_context: 0.8    # oversight modifies, doesn't dominate
+
+# Tool classification baselines
+tool_defaults:
+  Read:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Glob:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Grep:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Edit:
+    tool_privilege: 1
+    reversibility: 1
+    external_impact: 0
+  Write:
+    tool_privilege: 1
+    reversibility: 1
+    external_impact: 0
+  Bash:
+    tool_privilege: 2
+    reversibility: 2
+    external_impact: 1
+  WebFetch:
+    tool_privilege: 1
+    reversibility: 0
+    external_impact: 1
+  WebSearch:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+
+# Bash command-specific overrides (regex patterns)
+bash_overrides:
+  "rm -rf":
+    tool_privilege: 4
+    reversibility: 4
+  "docker":
+    tool_privilege: 3
+    reversibility: 2
+  "git push --force":
+    tool_privilege: 3
+    reversibility: 4
+  "curl.*POST":
+    tool_privilege: 2
+    external_impact: 3
+  "pip install":
+    tool_privilege: 2
+    reversibility: 1

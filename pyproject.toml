@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fivedrisk"
+version = "0.4.0"
+description = "Per-action AI agent risk scoring and governance: 5-dimension scoring, HITL enforcement, Markov drift detection, injection scanning, and auditable decision logs."
+readme = { file = "fivedrisk/README.md", content-type = "text/markdown" }
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Loren Angoni" }
+]
+keywords = [
+    "ai-safety", "ai-governance", "agent-safety", "llm-safety",
+    "prompt-injection", "hitl", "risk-scoring", "audit-log",
+    "markov-drift", "owasp", "langgraph", "claude", "anthropic"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+langgraph = [
+    "langgraph>=0.2.3",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.urls]
+Homepage = "https://github.com/theDoc001/fivedrisk"
+Repository = "https://github.com/theDoc001/fivedrisk"
+"Bug Tracker" = "https://github.com/theDoc001/fivedrisk/issues"
+Changelog = "https://github.com/theDoc001/fivedrisk/blob/main/CHANGELOG.md"
+
+[project.scripts]
+fivedrisk = "fivedrisk.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fivedrisk*"]
+
+[tool.setuptools.package-data]
+fivedrisk = ["*.yaml", "fixtures/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["fivedrisk/tests"]
+asyncio_mode = "auto"
+markers = [
+    "llm01_prompt_injection: tests covering OWASP LLM01 (Prompt Injection)",
+    "llm02_insecure_output: tests covering OWASP LLM02 (Insecure Output Handling)",
+    "llm04_model_dos: tests covering OWASP LLM04 (Model Denial of Service)",
+    "llm06_sensitive_disclosure: tests covering OWASP LLM06 (Sensitive Information Disclosure)",
+    "llm07_insecure_plugin: tests covering OWASP LLM07 (Insecure Plugin Design)",
+    "llm08_excessive_agency: tests covering OWASP LLM08 (Excessive Agency)",
+    "safety_drift: tests covering compositional / session-level drift (fivedrisk-specific)",
+]

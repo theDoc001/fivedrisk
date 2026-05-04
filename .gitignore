@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Env
+.env
+.env.*
+*.env
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Local dev
+*.log
+
+# iCloud sync duplicates
+* 2.*
+* 2
+
+# Pre-publish drafts (release deliberately with cosigner credit per master pitch §4.3)
+docs/

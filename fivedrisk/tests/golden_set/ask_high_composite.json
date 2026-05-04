@@ -1,0 +1,9 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "docker compose restart && pip install new-dependency && curl https://api.internal.example.com/deploy"
+  },
+  "expected_band": "ORANGE",
+  "description": "Chained bash command: docker restart (privilege 3) triggers ASK via single-axis spike. Combines container restart, package install, and network call.",
+  "autonomy_context": 2
+}

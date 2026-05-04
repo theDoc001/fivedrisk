@@ -1,0 +1,11 @@
+{
+  "name": "fivedrisk",
+  "description": "5D Risk Governance Engine — scores every agent action on 5 dimensions before execution. GO/ASK/STOP bands with configurable policy. Built for long-horizon agent work.",
+  "version": "0.4.0",
+  "author": {
+    "name": "Loren",
+    "url": "https://langoni.me"
+  },
+  "homepage": "https://github.com/theDoc001/fivedrisk",
+  "license": "Apache-2.0"
+}
