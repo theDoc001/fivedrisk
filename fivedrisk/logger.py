@@ -76,7 +76,29 @@ class DecisionLog:
 
     def __init__(self, path: Optional[str | Path] = None) -> None:
         self.path = Path(path) if path else DEFAULT_LOG_PATH
-        self._ensure_schema()
+        self.fallback_active = False
+        try:
+            self._ensure_schema()
+        except sqlite3.OperationalError as primary_err:
+            # Primary path unwritable (read-only FS, sandbox restriction, missing
+            # parent dir, etc.). Fall back to the system temp dir so the agent is
+            # not taken down by a logging-side I/O error. Logs persist for the
+            # session but not across reboots when the fallback is active.
+            import tempfile
+            import warnings
+
+            tmp_path = Path(tempfile.gettempdir()) / "fivedrisk_decisions.db"
+            warnings.warn(
+                f"DecisionLog could not write to {self.path}: {primary_err}. "
+                f"Falling back to {tmp_path}; entries persist for this session "
+                "only. Set an explicit writable path to silence this warning.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self.path = tmp_path
+            self.fallback_active = True
+            # If the fallback also fails, propagate. Something is genuinely wrong.
+            self._ensure_schema()
 
     def _ensure_schema(self) -> None:
         with sqlite3.connect(self.path) as conn:

@@ -30,6 +30,10 @@ env/
 # Local dev
 *.log
 
+# Runtime artifacts (decision logs, benchmark DBs)
+*.db
+*.db-journal
+
 # iCloud sync duplicates
 * 2.*
 * 2

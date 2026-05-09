@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '$TOOL_INPUT' | python -m fivedrisk score -"
+            "command": "echo \"$TOOL_INPUT\" | python -m fivedrisk --format json score -"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '$TOOL_RESULT' | python -m fivedrisk score --dry-run -"
+            "command": "echo \"$TOOL_RESULT\" | python -m fivedrisk --format json score - --dry-run"
           }
         ]
       }

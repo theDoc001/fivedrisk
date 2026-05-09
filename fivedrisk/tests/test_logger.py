@@ -156,3 +156,53 @@ class TestDecisionMemory:
         mems = log.list_memories(scope="global")
         assert len(mems) == 1
         assert mems[0]["decision"] == "approved"
+
+
+class TestUnwritablePathFallback:
+    """v0.4.1 resilience: DecisionLog must not take down the agent on storage I/O errors."""
+
+    def test_fallback_active_when_primary_path_unwritable(self, tmp_path):
+        """An unwritable parent directory must fall back to tempdir, not raise."""
+        ro_dir = tmp_path / "readonly"
+        ro_dir.mkdir()
+        ro_dir.chmod(0o500)  # read+execute only, no write
+        try:
+            target = ro_dir / "decisions.db"
+            import warnings
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                log = DecisionLog(target)
+                # Constructor must succeed
+                assert log.fallback_active is True
+                # A RuntimeWarning must have been emitted explaining the fallback
+                assert any(
+                    issubclass(w.category, RuntimeWarning)
+                    and "Falling back" in str(w.message)
+                    for w in caught
+                )
+                # The active path must be writable; logging must work end-to-end
+                from fivedrisk.schema import Band
+                scored = _make_scored(Band.GREEN, "Read")
+                row_id = log.log(scored)
+                assert isinstance(row_id, int)
+                assert row_id >= 1
+        finally:
+            ro_dir.chmod(0o700)  # restore so pytest tmp_path cleanup works
+
+    def test_fallback_path_persists_within_session(self, tmp_path):
+        """After fallback, two DecisionLog instances pointed at the same unwritable path
+        must share the tempdir fallback so log entries accumulate within a session."""
+        ro_dir = tmp_path / "readonly2"
+        ro_dir.mkdir()
+        ro_dir.chmod(0o500)
+        try:
+            target = ro_dir / "decisions.db"
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                log_a = DecisionLog(target)
+                log_b = DecisionLog(target)
+            assert log_a.path == log_b.path  # both fell back to same tempdir file
+            assert log_a.fallback_active and log_b.fallback_active
+        finally:
+            ro_dir.chmod(0o700)

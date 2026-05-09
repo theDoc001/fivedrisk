@@ -48,7 +48,7 @@ Actions receive a band: **GREEN** (execute) / **YELLOW** (log + conditional) / *
 - **Audit log** — append-only SQLite decision log, every action recorded
 - **Policy floor enforcement** — floor rules in `policy.yaml` cannot be overridden at runtime
 - **OWASP-aligned benchmark suite** — 39 offline attack scenarios (injection, exfiltration, drift)
-- **309 tests** — 0 failures
+- **311 tests** with 0 failures
 
 ---
 
@@ -181,7 +181,7 @@ fivedrisk/
 ├── logger.py        # DecisionLog (SQLite, append-only)
 ├── langgraph_node.py# LangGraph integration
 ├── benchmarks.py    # 39-case offline benchmark harness
-└── tests/           # 309 tests
+└── tests/           # 311 tests
 ```
 
 **Coverage**: 14/21 governance spec sections fully implemented.

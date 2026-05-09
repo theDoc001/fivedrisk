@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [0.4.1] — 2026-05-08
+
+Patch release. No API breakage; ships safely on top of any v0.4.0 install.
+
+### Fixed
+- **Plugin hooks: bash variable expansion (Bug 1)**. `dev/fivedrisk-plugin/hooks/hooks.json` was wrapping `$TOOL_INPUT` and `$TOOL_RESULT` in single quotes, which prevents shell expansion. The plugin was scoring the literal string `$TOOL_INPUT` on every PreToolUse / PostToolUse hook. Switched to escaped double quotes so the variables expand at the shell level before the value reaches the scorer.
+- **Plugin hooks: argparse positioning (Bug 2)**. `--format` is a top-level CLI flag, not a subcommand flag. The hook command now invokes `python -m fivedrisk --format json score -` (top-level flag before subcommand). PostToolUse adds `--dry-run` so accidental write attempts on read-only filesystems do not bubble up as hook failures.
+- **Logger resilience (Bug 3)**. `DecisionLog.__init__` now wraps schema initialization in a try/except. If the configured DB path is unwritable (read-only FS, sandbox restriction, missing parent directory), the logger falls back to the system temp directory and emits a `RuntimeWarning` describing the fallback. The agent is no longer taken down by a logging-side I/O error. A `fallback_active` attribute is exposed for callers that want to detect the condition. Two new tests cover the unwritable-path scenario.
+
+### Test count
+- 311 passing, 0 failing (was 308 / 1 in v0.4.0). The previously-failing `test_langgraph_blocks_when_session_required_and_missing` passes after the logger resilience fix; two new tests added for the fallback path itself.
+
+### Notes
+- The plugin is now end-to-end operable on any environment where the system temp directory is writable. Read-only or sandbox-restricted filesystems no longer crash the hook chain.
+- Pitch claim "309 tests with 0 failures" should be updated to "311 tests with 0 failures" after this patch lands publicly.
+
+---
+
 ## [Unreleased] — v0.5.0 planned
 
 Target ship: TBD. Forcing functions: PyPI publish, HN Show HN submission, awesome-llm-security PR.
