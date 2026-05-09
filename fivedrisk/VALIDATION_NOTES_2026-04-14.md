@@ -16,7 +16,7 @@ This validation pass treated 5D as a focused runtime policy engine:
 - output leakage / exfiltration detection
 - decision logging and session auditability
 
-This pass did not treat 5D as a full enterprise governance platform. The
+This pass did not treat 5D as a complete governance platform. The
 benchmark choice was constrained to runtime safety and policy enforcement.
 
 ## Work completed

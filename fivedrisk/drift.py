@@ -7,8 +7,10 @@ band regardless of its individual score.
 Inspired by SafetyDrift (arxiv 2603.27148, March 2025) — the insight
 that individual GREEN actions can compose into a RED sequence.
 
-MVP implementation: O(1) per action, no Markov math, ~30 lines of core logic.
-Full Markov chain implementation planned for 5D Standard tier.
+O(1) per action, no Markov math, ~30 lines of core logic. The full
+16-state Markov chain tracker lives in `markov.py` and is the default
+in the runtime hooks; this counter-based accumulator is retained as a
+light alternative and as a fallback inside the Markov tracker.
 
 Usage:
     from fivedrisk.drift import SessionAccumulator

@@ -62,7 +62,7 @@ class Policy:
     """
 
     version: str = "0.2.0"
-    tier: str = "standard"  # light | standard | enterprise
+    tier: str = "standard"
 
     # ── 4-Band normalized score thresholds (§12.4) ──
     green_score: float = 0.0       # everything below yellow

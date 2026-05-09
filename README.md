@@ -107,8 +107,8 @@ from fivedrisk.hooks import fivedrisk_pre_tool, fivedrisk_post_tool
 
 **With LangGraph:**
 ```python
-from fivedrisk.langgraph_node import fivedrisk_node
-# Add fivedrisk_node to your StateGraph before any tool-executing node
+from fivedrisk.langgraph_node import fivedrisk_gate_node
+# Add fivedrisk_gate_node to your StateGraph before any tool-executing node
 ```
 
 ---

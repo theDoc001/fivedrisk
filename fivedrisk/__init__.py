@@ -20,7 +20,12 @@ Provenance: 5D Risk Governance Model is DotOS-native.
 Authored by Loren, March 2026. Apache-2.0 license.
 """
 
-__version__ = "0.3.0"
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+try:
+    __version__ = _pkg_version("fivedrisk")
+except PackageNotFoundError:  # editable / source checkout without metadata
+    __version__ = "0.0.0+unknown"
 
 from .classifier import classify_tool_call
 from .drift import DriftBump, SessionAccumulator

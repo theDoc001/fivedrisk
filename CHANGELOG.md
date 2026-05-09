@@ -52,7 +52,7 @@ Target ship: TBD. Forcing functions: PyPI publish, HN Show HN submission, awesom
 
 ### Added
 - SafetyDrift MVP (`drift.py`): session-level cumulative risk accumulator across 5 attack scenarios. O(1) per action, no Markov math at this tier.
-- Full Markov chain SafetyDrift (16-state, 4×4) targeted for Standard tier.
+- Full Markov chain SafetyDrift (16-state, 4×4) shipped in `markov.py`; default in the runtime hooks.
 - Injection scanner (`hooks.py:scan_input_for_injection`): 24 regex patterns, zero external dependencies.
 - Output leakage scanner (`hooks.py:scan_output_for_leakage`): credentials, PII (SSN, credit card), crypto keys, injection-echo detection, exfiltration command patterns.
 - `@gate` decorator for sync and async functions.

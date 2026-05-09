@@ -83,7 +83,8 @@ Tracks cumulative risk across action sequences:
 - Green runway detection — catches stealth (long GREEN streak masking accumulation)
 
 O(1) per action, no Markov math. 18 tests covering all 5 attack scenarios.
-Full Markov chain planned for 5D Standard tier.
+Full Markov chain shipped in `markov.py` (16-state, Gauss-Jordan inversion,
+absorption-probability escalation) and is the default in the runtime hooks.
 
 ### Runtime Wiring
 - `builder.py`: injection scan on goal objective before LLM, egress scan on output before vault write
@@ -267,7 +268,7 @@ response = client.messages.create(
 | FEAT-5D-TEVV-EXFIL | §17.3 | Data exfiltration test pack | HIGH | 4 |
 | FEAT-5D-TEVV-BYPASS | §17.4 | Approval bypass test pack | HIGH | 4 |
 | FEAT-5D-IDENTITY | §18 | Agent identity lifecycle | LOW | 5+ |
-| FEAT-5D-GEO | §19.4 | Geography-aware routing | LOW | Enterprise |
+| FEAT-5D-GEO | §19.4 | Geography-aware routing | LOW | 5+ |
 | FEAT-5D-BATCH | perf | Batch-approve consecutive GREENs | MEDIUM | 4 |
 | FEAT-5D-HEARTBEAT | UX | 10s routing progress indicator | MEDIUM | 4 |
 
