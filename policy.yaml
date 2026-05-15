@@ -1,25 +1,19 @@
-# 5D Risk Governance Engine — DotOS Default Policy
-# Aligned with Governance Spec v0.3 (§12-19)
-# Version: 0.2.0 | Tier: Standard (4-band)
+# 5D Risk Governance Engine — Default Policy
+# Aligned with Governance Spec v0.3 (§12-19). 4-band system.
 
 version: "0.2.0"
-tier: "standard"
 
 # 4-Band normalized score thresholds (§12.4)
 # Score range 0-3 (normalized from weighted composite)
 bands:
   yellow_score: 1.0    # Moderate risk
-  orange_score: 1.8    # High risk — mandatory approval
-  red_score: 2.5       # Critical — deny by default
+  orange_score: 1.8    # High risk, mandatory approval
+  red_score: 2.5       # Critical, deny by default
 
 # Single-axis spike thresholds
 thresholds:
   red_threshold: 4       # any dim >= this → RED
   orange_threshold: 3    # any dim >= this → ORANGE
-  # Legacy 3-band compat
-  stop_threshold: 4
-  ask_threshold: 3
-  composite_ask: 8.0
 
 # Dimension weights (§12.3)
 weights:

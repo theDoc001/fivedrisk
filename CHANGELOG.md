@@ -24,9 +24,80 @@ Patch release. No API breakage; ships safely on top of any v0.4.0 install.
 
 ---
 
+## [0.5.0] — Unreleased (first PyPI release)
+
+Major release. DEV-008 full 5D classification, DEV-003 Markov audit, cost-management MVP, acting-identity primitive, NDJSON event emission, MITRE ATLAS coverage with real tests, OWASP Agentic Top 10 coverage doc, 3-band default with opt-in 4-band compliance model, audit pass, pre-publish cleanup. First release to PyPI.
+
+### Added (cost-management + identity capture sprint)
+- **Cost-management primitives**. New `BudgetAccumulator` (per-session token spend with reservation, commit, cancel), `token_costs.py` table for common LLM classes (OpenAI GPT-4-class, Anthropic Claude Sonnet/Opus, Google Gemini Pro, Mistral Large). New `Policy` attributes `max_session_budget_tokens` and `max_tool_call_budget_tokens`. `Policy.admit_session()` admission check. `@gate` extended with per-tool-call reservation enforcement that raises `BudgetExceededError` directly when projected spend exceeds the configured cap. Budget admission and the 5D Score function are deliberately separate paths: budget breach is a direct DENY at the reservation gate, not a Score modifier. NDJSON `budget_intervention` event records every rejection. Additional Operational FinOps capabilities (multi-agent budget envelopes, useful-progress monitoring, wall-clock and retry caps) are on the project roadmap.
+- **Acting identity primitive**. New `ActingIdentity` dataclass with `PrincipalType` (USER/SERVICE/ROLE/AGENT/ANONYMOUS) and `AttestationSource` (HTTP_HEADER/JWT_CLAIM/ENV_VAR/AGENT_DECLARED/NONE) enums, optional `roles` and `data_scope`. `Action.acting_identity` field flows through to audit log and NDJSON events. New `Policy.identity_required` attribute denies ANONYMOUS callers with `IdentityRequiredError` and emits `identity_required_denial` NDJSON event. Identity-aware policy evaluation beyond admission is on the project roadmap.
+- **NDJSON event emission layer** (`events.NDJSONEventChannel`). Sibling to the SQLite `DecisionLog`. Emits `risk_decision`, `budget_intervention`, and `identity_required_denial` events with shared `trace_id` and `session_id` correlation. SIEM-friendly stream format. Best-effort write; failures warn but do not interrupt the action pipeline. Configured via `configure(event_path=...)`.
+- `@gate` accepts new optional kwargs `_fivedrisk_acting_identity`, `_fivedrisk_model_class`, `_fivedrisk_input_tokens` for per-call override of decorator defaults.
+- `configure()` extended with `event_path`, `default_model_class`, `default_estimated_input_tokens` parameters.
+
+### Changed (DEV-008 — true 5D classification)
+- `classifier.py` rewritten with content heuristics across all four content dimensions (D, T, R, E); `tool_privilege` now has 6 content heuristic patterns where it had none before.
+- New `AutonomySignals` dataclass on `schema.py` for hybrid autonomy derivation (caller passes signals dict, classifier derives autonomy_context). `classify_tool_call` accepts `autonomy_signals` kwarg; explicit `autonomy_context` int still wins when both are provided.
+- New `tests/test_classifier_per_dim.py` with 56 tests covering all five dimensions.
+
+### Changed (audit / cleanup)
+- **BREAKING**: Removed legacy 3-band shim. `Band.GO`, `Band.ASK`, `Band.STOP` aliases deleted along with `score_light()` and the `Policy` fields `stop_threshold`, `ask_threshold`, `composite_ask`. The canonical band system is 4-band (`GREEN`, `YELLOW`, `ORANGE`, `RED`). No installed users existed at v0.4.1 publish time, so this is the cheapest moment to make this break.
+- `policy.yaml` defaults rewritten to drop legacy threshold keys. Two sample policy files updated.
+- `__version__` now read dynamically via `importlib.metadata` instead of a hardcoded string.
+- README LangGraph example fixed: `fivedrisk_node` → `fivedrisk_gate_node` (the real export name).
+- README `Performance` section added with measured p50/p95/p99 numbers from `benchmarks/bench_minimal.py` (~40-70µs p50 for 5D core, ~5ms p50 including SQLite audit-log write). Replaces the stale "~0.3ms scoring" claim.
+- `policy.tier` vestigial field removed (no consumers).
+
+### Added (other)
+- **Agent identity passthrough** via `Action.metadata["agent_identity"]`. Opaque string flows through to the audit log for SOC/SIEM correlation. README documents the reserved key. Structured parsing and identity-aware policy hooks for `agent_identity` (workload identity) are post-OSS scope.
+- `benchmarks/bench_minimal.py` reproduces published performance numbers. Self-bootstrapping import (works without pip editable install) for compatibility with iCloud paths and Python 3.14.
+- README `Planned` section listing future capability surfaces (SPIFFE/MCP reference, MITRE ATLAS coverage, NIST AI RMF mapping, OWASP Agentic Top 10 coverage, regulatory crosswalks, decision log analysis cookbook).
+- ARCHITECTURE.md §18 row flipped from ❌ BACKLOG to ⚠️ PARTIAL (opaque identity passthrough only).
+- YELLOW band documentation expanded to highlight cost-management benefits (automatic model routing, enhanced audit logging without HITL latency).
+- New beacon coverage docs: `owasp-agentic-top10-coverage.md`, `mitre-atlas-coverage.md`, `decision-log-cookbook.md`.
+- New example: `examples/spiffe_mcp_passthrough.py` runnable end-to-end pattern with mocks for SPIRE workload API and MCP server.
+
+### Architectural contracts
+Budget admission and the 5D Score function are deliberately separate paths. The `BudgetAccumulator` does not feed `score()` or Band classification. `BudgetAccumulator.get_pressure_ratio()` exists for telemetry use only. Tests in `test_budget_accumulator.py` and `test_budget_enforcement_integration.py` pin down this contract.
+
+### Band system: 3-band default, opt-in 4-band
+
+- `Policy.enable_yellow_band: bool = False`. Default is a 3-band experience (GREEN / ORANGE / RED). Score ranges that would have landed YELLOW now return GREEN, removing configuration friction for users who do not need a moderate-risk tier.
+- Set `enable_yellow_band: true` in `policy.yaml` for the 4-band compliance model. Adds a stable YELLOW label for audit queries and dashboards. Within YELLOW, model-class promotion for sensitive data is a separate opt-in via `yellow_model_escalation: true`.
+- `_route_model` in `scorer.py` no longer auto-promotes the model class for ORANGE. ORANGE signals `approval_required=True`; the caller's HITL stack decides what model the reviewer (or AI-assisted HITL pipeline) uses.
+- ORANGE no longer forbids `downgrade_allowed`; the routing recommendation is advisory across all bands.
+
+### Notes
+- Test count: 405 (was 311 in v0.4.1). DEV-008 added 56 tests; cost MVP + identity + NDJSON added 42 tests; shim removal removed 4.
+- Per-action overhead measurement: ~40-70µs p50 / ~59-294µs p99 for the classify + score core path (sandbox aarch64 vs M1 macOS). Audit-log write dominates at ~5ms p50 in default SQLite configuration; configure WAL mode or async writes for sub-millisecond per-action gating.
+
+### Changed
+- **BREAKING**: Removed legacy 3-band shim. `Band.GO`, `Band.ASK`, `Band.STOP` aliases deleted along with `score_light()` and the `Policy` fields `stop_threshold`, `ask_threshold`, `composite_ask`. The canonical band system is 4-band (`GREEN`, `YELLOW`, `ORANGE`, `RED`). No installed users existed at v0.4.1 publish time, so this is the cheapest moment to make this break.
+- `policy.yaml` defaults rewritten to drop the legacy threshold keys. Two sample policy files updated.
+- `__version__` now read dynamically via `importlib.metadata` instead of a hardcoded string.
+- README LangGraph example fixed: `fivedrisk_node` → `fivedrisk_gate_node` (the real export name).
+- README `Performance` section added with measured p50/p95/p99 numbers from `benchmarks/bench_minimal.py` (~40µs p50 for 5D core, ~5ms p50 including SQLite audit-log write). Replaces the stale "~0.3ms scoring" claim.
+- `policy.tier` vestigial field removed (no consumers).
+
+### Added
+- **Agent identity passthrough** via `Action.metadata["agent_identity"]`. Opaque string flows through to the audit log for SOC/SIEM correlation. README documents the reserved key. Structured parsing and identity-aware policy hooks are post-OSS scope.
+- `benchmarks/bench_minimal.py` reproduces the published performance numbers.
+- README `Planned` section listing future capability surfaces (SPIFFE/MCP reference, MITRE ATLAS coverage, NIST AI RMF mapping, OWASP Agentic Top 10 coverage, regulatory crosswalks, decision log analysis cookbook).
+- ARCHITECTURE.md §18 row flipped from ❌ BACKLOG to ⚠️ PARTIAL (opaque identity passthrough only).
+- YELLOW band documentation expanded to highlight cost-management benefits (automatic model routing, enhanced audit logging without HITL latency).
+
+### Fixed
+- Pre-existing tier-talk and stale-docstring sweep: `drift.py`, `ARCHITECTURE.md`, `CHANGELOG.md`, `VALIDATION_NOTES_2026-04-14.md`. The runtime path uses the 16-state Markov chain; prior documentation incorrectly framed it as planned.
+
+### Notes
+- Test count: 307 (was 311 in v0.4.1). Four shim-validation tests removed alongside the shim.
+- Per-action overhead measurement: ~40µs p50 / ~59µs p99 for the classify + score core path. Audit-log write dominates at ~5ms p50 in default SQLite configuration; configure WAL mode or async writes for sub-millisecond per-action gating.
+
+---
+
 ## [Unreleased] — v0.5.0 planned
 
-Target ship: TBD. Forcing functions: PyPI publish, HN Show HN submission, awesome-llm-security PR.
+Target ship: TBD.
 
 ### Added (post-v0.4.0 housekeeping, pre-PyPI release)
 - Apache-2.0 LICENSE file at repo root (closes the GitHub "no recognised LICENSE" API gap)

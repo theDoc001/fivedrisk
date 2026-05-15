@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fivedrisk"
-version = "0.4.1"
+version = "0.5.0"
 description = "Per-action AI agent risk scoring and governance: 5-dimension scoring, HITL enforcement, Markov drift detection, injection scanning, and auditable decision logs."
 readme = { file = "fivedrisk/README.md", content-type = "text/markdown" }
 license = { text = "Apache-2.0" }
@@ -69,4 +69,15 @@ markers = [
     "llm07_insecure_plugin: tests covering OWASP LLM07 (Insecure Plugin Design)",
     "llm08_excessive_agency: tests covering OWASP LLM08 (Excessive Agency)",
     "safety_drift: tests covering compositional / session-level drift (fivedrisk-specific)",
+    # MITRE ATLAS coverage markers (see mitre-atlas-coverage.md)
+    "atlas_t0051: AML.T0051 LLM Prompt Injection (any sub-technique)",
+    "atlas_t0051_000: AML.T0051.000 Direct Prompt Injection",
+    "atlas_t0051_001: AML.T0051.001 Indirect Prompt Injection",
+    "atlas_t0050: AML.T0050 Command and Scripting Interpreter",
+    "atlas_t0057: AML.T0057 LLM Data Leakage",
+    "atlas_t0048: AML.T0048 External Harms",
+    "atlas_t0049: AML.T0049 Tool Misuse and Exploitation",
+    "atlas_t0040: AML.T0040 ML Model Inference API Access",
+    "atlas_t0024: AML.T0024 Exfiltration via ML Inference API",
+    "atlas_t0064: AML.T0064 Cascading (compositional failure)",
 ]

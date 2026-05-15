@@ -27,12 +27,33 @@ class TestScorerCapability:
         assert result.routing is not None
         assert result.routing.selected_model == ModelClass.M3 or result.band == Band.ORANGE
 
-    def test_yellow_d2_uses_enhanced_verification(self):
-        policy = Policy(weights={"data_sensitivity": 6.0, "tool_privilege": 0.0, "reversibility": 0.0, "external_impact": 0.0, "autonomy_context": 0.0})
-        result = score(Action(tool_name="Read", tool_input={}, data_sensitivity=2), policy)
-        assert result.band == Band.YELLOW
-        assert result.routing is not None
-        assert result.routing.verification_level == "enhanced"
+    def test_yellow_d2_opt_in_model_escalation(self):
+        """YELLOW model escalation is opt-in. Requires both
+        `enable_yellow_band=True` (band exists) and
+        `yellow_model_escalation=True` (routing within it)."""
+        weights = {"data_sensitivity": 6.0, "tool_privilege": 0.0,
+                   "reversibility": 0.0, "external_impact": 0.0,
+                   "autonomy_context": 0.0}
+
+        # YELLOW enabled, no escalation: band returned but routing neutral
+        policy_yellow_only = Policy(weights=weights, enable_yellow_band=True)
+        result_default = score(
+            Action(tool_name="Read", tool_input={}, data_sensitivity=2),
+            policy_yellow_only,
+        )
+        assert result_default.band == Band.YELLOW
+        assert result_default.routing.verification_level == "standard"
+
+        # YELLOW enabled, escalation opted in
+        policy_optin = Policy(
+            weights=weights, enable_yellow_band=True, yellow_model_escalation=True
+        )
+        result_optin = score(
+            Action(tool_name="Read", tool_input={}, data_sensitivity=2),
+            policy_optin,
+        )
+        assert result_optin.band == Band.YELLOW
+        assert result_optin.routing.verification_level == "enhanced"
 
     def test_orange_requires_approval(self):
         result = score(Action(tool_name="Bash", tool_input={}, tool_privilege=3))
@@ -88,7 +109,13 @@ class TestScorerCapability:
         assert "max_dim" in result.rationale
 
     def test_yellow_band_can_come_from_composite(self):
-        policy = Policy(weights={"data_sensitivity": 8.0, "tool_privilege": 0.0, "reversibility": 0.0, "external_impact": 0.0, "autonomy_context": 0.0})
+        """YELLOW band requires enable_yellow_band=True (4-band mode)."""
+        policy = Policy(
+            weights={"data_sensitivity": 8.0, "tool_privilege": 0.0,
+                     "reversibility": 0.0, "external_impact": 0.0,
+                     "autonomy_context": 0.0},
+            enable_yellow_band=True,
+        )
         result = score(Action(tool_name="Read", tool_input={}, data_sensitivity=2), policy)
         assert result.band == Band.YELLOW
 

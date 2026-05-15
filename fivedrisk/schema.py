@@ -46,12 +46,6 @@ class Band(Enum):
         return self == Band.RED
 
 
-# Backward-compatible aliases for 3-band consumers (5D Light)
-Band.GO = Band.GREEN
-Band.ASK = Band.ORANGE
-Band.STOP = Band.RED
-
-
 # ─── Model Classes (§19.2) ─────────────────────────────────────
 
 class ModelClass(Enum):
@@ -109,6 +103,133 @@ DIM_MIN = 0
 DIM_MAX = 4
 
 
+# ─── Acting Identity (OSS-PASS-THROUGH-IDENTITY-001) ─────────
+
+class PrincipalType(Enum):
+    """Type of principal an action is being taken on behalf of."""
+    USER = "USER"            # end-user invoking the agent
+    SERVICE = "SERVICE"      # service account / machine-to-machine
+    ROLE = "ROLE"            # role-assumed credentials (e.g. IAM role)
+    AGENT = "AGENT"          # another agent
+    ANONYMOUS = "ANONYMOUS"  # no principal asserted
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class AttestationSource(Enum):
+    """Where the identity claim came from.
+
+    Indicates the surface that asserted the identity. fivedrisk does not
+    verify or cryptographically validate the claim at this layer.
+    Verification surfaces (SPIFFE/SPIRE integration, JWT signature check,
+    X.509 chain validation) are on the project roadmap.
+    """
+    HTTP_HEADER = "HTTP_HEADER"        # e.g. X-User-Id, Authorization
+    JWT_CLAIM = "JWT_CLAIM"            # parsed from a JWT
+    ENV_VAR = "ENV_VAR"                # from an environment variable
+    AGENT_DECLARED = "AGENT_DECLARED"  # the agent itself declared the identity
+    NONE = "NONE"                      # no attestation source
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass
+class ActingIdentity:
+    """The principal an action is being taken on behalf of.
+
+    This is the AAA-style identity (who authorized this action). It is
+    distinct from `Action.metadata["agent_identity"]` which captures the
+    AGENT'S OWN workload identity (e.g. SPIFFE SVID URI). Both can be set
+    simultaneously: the agent has a SPIFFE identity AND is acting on
+    behalf of a user/role.
+
+    This is a pass-through capture: the fields flow through to the audit
+    log and NDJSON events unchanged. Identity-aware policy evaluation
+    beyond the `identity_required` admission check is on the project
+    roadmap.
+    """
+
+    principal_id: str
+    principal_type: PrincipalType = PrincipalType.ANONYMOUS
+    attestation_source: AttestationSource = AttestationSource.NONE
+    roles: Optional[List[str]] = None        # optional role list
+    data_scope: Optional[List[str]] = None   # optional data scope (e.g. tenant ids)
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "principal_id": self.principal_id,
+            "principal_type": str(self.principal_type),
+            "attestation_source": str(self.attestation_source),
+        }
+        if self.roles:
+            d["roles"] = list(self.roles)
+        if self.data_scope:
+            d["data_scope"] = list(self.data_scope)
+        return d
+
+    @classmethod
+    def anonymous(cls) -> "ActingIdentity":
+        """The default ANONYMOUS identity for callers that supply nothing."""
+        return cls(
+            principal_id="anonymous",
+            principal_type=PrincipalType.ANONYMOUS,
+            attestation_source=AttestationSource.NONE,
+        )
+
+
+# ─── Autonomy signals ─────────────────────────────────────────
+
+@dataclass
+class AutonomySignals:
+    """Optional signals the classifier uses to derive autonomy_context.
+
+    Hybrid model (per design 2026-05-10):
+      - Callers can pass `autonomy_context` to `classify_tool_call` as an
+        int directly (current API, override path).
+      - Callers can pass `autonomy_signals` instead, and the classifier
+        will derive an autonomy_context value from the signals.
+      - When both are present, the explicit int wins.
+
+    All fields optional. Missing signals score conservatively (toward 0,
+    interactive). Each signal can bump up; the classifier caps at 4.
+    """
+
+    seconds_since_user_message: Optional[float] = None  # higher = more autonomous
+    retry_count: int = 0                                # higher = agent iterating without human
+    plan_depth: int = 0                                 # higher = deeper in plan chain
+    prior_hitl_approved: bool = False                   # human-vetted earlier in session
+    unattended: bool = False                            # explicit unattended-mode marker
+
+    def derive_autonomy_context(self) -> int:
+        """Derive an autonomy_context value (0-4) from the signals.
+
+        Conservative scoring: missing signals do not bump. Each signal
+        contributes at most +1. Capped at 4.
+
+        Bump rules:
+          - seconds_since_user_message >= 300 (5 min): +1
+          - retry_count >= 3: +1
+          - plan_depth >= 3: +1
+          - unattended is True: +2 (the strongest single signal)
+          - prior_hitl_approved is True: clamp result at 2 (HITL has vetted
+            this session; treat as "supervised" regardless of other signals)
+        """
+        score = 0
+        if self.seconds_since_user_message is not None and self.seconds_since_user_message >= 300:
+            score += 1
+        if self.retry_count >= 3:
+            score += 1
+        if self.plan_depth >= 3:
+            score += 1
+        if self.unattended:
+            score += 2
+        if self.prior_hitl_approved:
+            score = min(score, 2)
+        return max(0, min(4, score))
+
+
 # ─── Action ────────────────────────────────────────────────────
 
 @dataclass
@@ -133,6 +254,12 @@ class Action:
     source: str = "unknown"
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # --- Acting Identity (OSS-PASS-THROUGH-IDENTITY-001) ---
+    # Optional pass-through capture of the principal on whose behalf this
+    # action is being taken. Distinct from metadata["agent_identity"]
+    # (the agent's own workload identity).
+    acting_identity: Optional["ActingIdentity"] = None
 
     def __post_init__(self) -> None:
         for dim_name in DIMENSION_NAMES:
@@ -161,7 +288,7 @@ class Action:
         return f"D{min(self.data_sensitivity, 3)}"
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d: Dict[str, Any] = {
             "tool_name": self.tool_name,
             "tool_input_hash": self.tool_input_hash,
             **{name: getattr(self, name) for name in DIMENSION_NAMES},
@@ -170,6 +297,9 @@ class Action:
             "timestamp": self.timestamp.isoformat(),
             "metadata": self.metadata,
         }
+        if self.acting_identity is not None:
+            d["acting_identity"] = self.acting_identity.to_dict()
+        return d
 
 
 # ─── Scored Action ─────────────────────────────────────────────

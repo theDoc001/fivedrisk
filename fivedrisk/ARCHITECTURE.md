@@ -27,7 +27,7 @@
 | §15.7 Three User Levers | Prompt/Cost/Risk | ⚠️ PARTIAL | `router.py` | Cost lever needs UI |
 | §16 Cost × Risk Coupling | Rules A-E, matrix | ✅ DONE | `scorer.py`, `router.py` | Enforced in routing |
 | §17 TEVV Test Packs | 9 test packs | ⚠️ PARTIAL | `tests/` | 84 tests, need adversarial |
-| §18 Agent Identity | Lifecycle, delegation, anomaly | ❌ BACKLOG | — | Phase 5+ |
+| §18 Agent Identity | Lifecycle, delegation, anomaly | ⚠️ PARTIAL | `Action.metadata["agent_identity"]` | Opaque passthrough only; structured identity post-OSS |
 | §19.1-19.2 Model Classes | M0-M4 abstract classes | ✅ DONE | `schema.py:ModelClass` | |
 | §19.3 Routing Table | Data×Risk×Task → Model | ✅ DONE | `scorer.py:_route_model()` | |
 | §19.5 Allowed/Disallowed | No M0/M1 for Orange/Red | ✅ DONE | `router.py:ModelRouter` | |
@@ -95,18 +95,18 @@ absorption-probability escalation) and is the default in the runtime hooks.
 
 ## Where 5D Activates — Action Flow Map
 
-### Flow 1: Dot reads a file it can't open
+### Flow 1: AI Agent reads a file it can't open
 ```
-User shares file → Dot receives → Read tool (GREEN, sub-ms)
-  → Dot searches for extension handler → Grep/WebSearch (GREEN, sub-ms)
-  → Dot finds it needs a package → pip install (YELLOW, classifier bumps tool_privilege)
+User shares file → the agent receives → Read tool (GREEN, sub-ms)
+  → the agent searches for extension handler → Grep/WebSearch (GREEN, sub-ms)
+  → the agent finds it needs a package → pip install (YELLOW, classifier bumps tool_privilege)
   → 5D check: pip install from unknown source → ORANGE → HITL card
   → User approves → remember "pip install <package>" for project → GREEN next time
 ```
 
-### Flow 2: Dot looks up web information
+### Flow 2: AI Agent looks up web information
 ```
-User asks research question → Dot plans WebSearch + WebFetch
+User asks research question → the agent plans WebSearch + WebFetch
   → WebSearch (GREEN) → WebFetch (GREEN)
   → PostToolUse hook scans output for injection patterns
   → If clean: content enters context as data (never instruction)
@@ -115,15 +115,15 @@ User asks research question → Dot plans WebSearch + WebFetch
 
 ### Flow 3: Prompt injection via website
 ```
-Dot reads webpage → PostToolUse detects "ignore instructions" pattern
+the agent reads webpage → PostToolUse detects "ignore instructions" pattern
   → Content marked as untrusted in metadata
-  → Dot's next action based on that content → classifier bumps data_sensitivity +1
-  → If Dot tries rm -rf based on injected instruction:
+  → the agent's next action based on that content → classifier bumps data_sensitivity +1
+  → If the agent tries rm -rf based on injected instruction:
     → classifier: tool_privilege=4, reversibility=4 → RED → STOP
   → Injection succeeded at LLM level, 5D blocked at execution level
 ```
 
-### Flow 4: Dot executes a spec/plan (many actions)
+### Flow 4: AI Agent executes a spec/plan (many actions)
 ```
 Builder picks up task list → for each task:
   → 5D scores (sub-ms, pure computation)
@@ -152,36 +152,29 @@ Attempt 5 (budget exhausted): HITL card type "retry-exhausted"
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ phi-4-mini (M0)                                             │
+│ M0-class model                                              │
 │ • Task classification (complexity/domain/reasoning 1-5)     │
-│ • If any dimension > 3 → ESCALATE to Qwen                 │
+│ • If any dimension > 3 → ESCALATE to M2-class model         │
 │ • Capability ceiling: lookup, parsing, routing only         │
-│ • Speed: ~25 tok/sec local                                  │
 └────────────────────┬────────────────────────────────────────┘
                      │ ESCALATE
 ┌────────────────────▼────────────────────────────────────────┐
-│ Qwen3:8b (M1/M2)                                           │
+│ M1/M2-class model                                           │
 │ • Planning, drafting, routine execution                     │
-│ • /think mode for multi-step reasoning (M2)                │
 │ • Self-evaluates confidence: HIGH/MEDIUM/LOW                │
-│ • If LOW or 5D band ORANGE+ → ESCALATE to Sonnet          │
+│ • If LOW or 5D band ORANGE+ → ESCALATE to M3-class model    │
 │ • Capability ceiling: complex reasoning, math, advanced code│
-│ • Speed: local, ~15 tok/sec                                │
 └────────────────────┬────────────────────────────────────────┘
                      │ ESCALATE
 ┌────────────────────▼────────────────────────────────────────┐
-│ Sonnet 4.6 + Opus Advisor (M3)                              │
-│ • Sonnet executes, calls Opus mid-task for guidance         │
-│ • Advisor Tool: server-side, no extra roundtrip             │
-│ • API: anthropic-beta: advisor-tool-2026-03-01              │
-│ • Advisor: 400-700 tokens guidance per call, max 3/request  │
-│ • Near-Opus quality at lower total cost                     │
-│ • 5D scores each action, Opus advises on ORANGE decisions   │
-│ • Capability ceiling: Red-tier decisions, trusted control    │
+│ M3-class model                                              │
+│ • Executes high-stakes actions                              │
+│ • 5D scores each action; advisor mechanisms (optional)      │
+│ • Capability ceiling: RED-tier decisions, trusted control   │
 └────────────────────┬────────────────────────────────────────┘
                      │ RED-tier only
 ┌────────────────────▼────────────────────────────────────────┐
-│ Opus 4.6 (M4)                                               │
+│ M4-class model                                              │
 │ • Trusted control plane                                     │
 │ • Red-band review + dual control                            │
 │ • Direct API call (not advisor pattern)                     │
@@ -235,7 +228,7 @@ response = client.messages.create(
 │ 🟠 ORANGE — Docker restart requires     │
 │ approval                                │
 │                                         │
-│ Dot wants to restart the LangGraph      │
+│ the agent wants to restart the LangGraph      │
 │ container. This affects running services.│
 │                                         │
 │ [Approve] [Deny] [Approve & Remember]   │
@@ -272,26 +265,3 @@ response = client.messages.create(
 | FEAT-5D-BATCH | perf | Batch-approve consecutive GREENs | MEDIUM | 4 |
 | FEAT-5D-HEARTBEAT | UX | 10s routing progress indicator | MEDIUM | 4 |
 
----
-
-## Execution Failure Post-Mortem (2026-04-11)
-
-**What happened**: Built 3-band GO/ASK/STOP engine without reading governance spec v0.3 which defines a 4-band GREEN/YELLOW/ORANGE/RED system with sandbox classes, credential broker, memory trust, Cost×Risk coupling, and model routing.
-
-**Root cause**: Skipped existing knowledge (P-009 violation: didn't shop before building).
-
-**Fix applied**: Upgraded to 4-band system, added model routing, HITL cards, decision memory, Cost×Risk coupling. 84 tests passing.
-
-**Systemic fix**: Add pre-build check to Coach: "Has this been specced? Read the spec first." Log as principle violation in decision log.
-
----
-
-## New Principle: P-011 Escalate Don't Guess
-
-> When an agent recognizes a task is beyond its capability ceiling, it
-> escalates to a more qualified model rather than attempting and failing.
-> Escalation is cheap. Bad output is expensive.
->
-> Applies to: phi→Qwen, Qwen→Sonnet, Sonnet→Opus.
-> Signals: low confidence, high complexity, high reasoning depth, ORANGE+ 5D band.
-> Each model has an explicit ceiling defined by task classification.

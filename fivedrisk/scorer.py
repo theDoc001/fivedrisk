@@ -20,20 +20,39 @@ from .schema import DIMENSION_NAMES, Action, Band, ModelClass, RoutingDecision, 
 
 # ─── Model routing table (§19.3) ───────────────────────────────
 
-def _route_model(band: Band, data_class: str, task_class: str = "execution") -> RoutingDecision:
+def _route_model(
+    band: Band,
+    data_class: str,
+    task_class: str = "execution",
+    policy: Policy | None = None,
+) -> RoutingDecision:
     """Determine model floor and routing based on risk band + data class.
 
-    Per governance spec v0.3 §19.3:
-      D0 + Green → M0/M1 (cheapest)
-      D1 + Green/Yellow → M1/M2 (normal)
-      D2 + Yellow/Orange → M2/M3 (stronger verification)
-      D3 + Orange/Red → M3/M4 (no silent downgrade)
+    fivedrisk stays deterministic. The 5D Score function and Band
+    classification do not prescribe a model. RoutingDecision is a
+    recommendation the caller's stack can honour or ignore.
+
+    Defaults are conservative: the routing recommendation is based on
+    data class for GREEN and RED bands. ORANGE signals that human
+    approval is required; it does not auto-promote the model class.
+    YELLOW only promotes the model class when the caller has opted in
+    via `policy.yellow_model_escalation = True`.
+
+    Band-by-band:
+      GREEN: cost-efficient (M0/M1 floor by data class).
+      YELLOW: neutral by default; opt-in to M2-class suggestion via policy.
+      ORANGE: same routing recommendation as the data class would suggest
+              outside HITL; the load-bearing signal is approval_required=True.
+              The caller's HITL stack decides what model the reviewer (or
+              the AI-assisted HITL pipeline) uses.
+      RED: hard gate; M4 suggested but the action is blocked regardless.
     """
-    # Default: cost-efficient
     floor = ModelClass.M1
     selected = ModelClass.M1
     downgrade = True
     verification = "standard"
+
+    yellow_escalate = policy is not None and policy.yellow_model_escalation
 
     if band == Band.RED:
         floor = ModelClass.M4
@@ -41,18 +60,36 @@ def _route_model(band: Band, data_class: str, task_class: str = "execution") -> 
         downgrade = False
         verification = "full_provenance"
     elif band == Band.ORANGE:
-        floor = ModelClass.M3
-        selected = ModelClass.M3
-        downgrade = False
-        verification = "enhanced"
-    elif band == Band.YELLOW:
+        # No auto model promotion: caller's HITL stack decides.
+        # Routing falls back to the data-class-appropriate default so the
+        # recommendation field is still informative for downstream
+        # consumers that want to know what fivedrisk would have suggested
+        # absent HITL.
         if data_class in ("D2", "D3"):
-            floor = ModelClass.M2
-            selected = ModelClass.M2
-            verification = "enhanced"
-        else:
             floor = ModelClass.M1
             selected = ModelClass.M2
+        else:
+            floor = ModelClass.M0
+            selected = ModelClass.M1
+        downgrade = True
+        verification = "enhanced"
+    elif band == Band.YELLOW:
+        if yellow_escalate:
+            if data_class in ("D2", "D3"):
+                floor = ModelClass.M2
+                selected = ModelClass.M2
+                verification = "enhanced"
+            else:
+                floor = ModelClass.M1
+                selected = ModelClass.M2
+        else:
+            # Default: no model promotion. Same as GREEN routing.
+            if data_class in ("D2", "D3"):
+                floor = ModelClass.M1
+                selected = ModelClass.M2
+            else:
+                floor = ModelClass.M0
+                selected = ModelClass.M1
     else:  # GREEN
         if data_class in ("D2", "D3"):
             floor = ModelClass.M1
@@ -173,8 +210,15 @@ def score(action: Action, policy: Policy | None = None) -> ScoredAction:
     band_order = [Band.GREEN, Band.YELLOW, Band.ORANGE, Band.RED]
     band = max(spike_band, score_band, key=lambda b: band_order.index(b))
 
-    # Step 6: Model routing
-    routing = _route_model(band, action.data_class)
+    # Step 5b: If YELLOW is not enabled, fold YELLOW into GREEN. Default
+    # is a 3-band experience (GREEN / ORANGE / RED). Pro / compliance
+    # deployments that need the moderate-risk tier opt in via
+    # policy.enable_yellow_band = True.
+    if band == Band.YELLOW and not policy.enable_yellow_band:
+        band = Band.GREEN
+
+    # Step 6: Model routing recommendation (caller is free to ignore)
+    routing = _route_model(band, action.data_class, policy=policy)
 
     rationale = _build_rationale(action, band, max_dim, composite, normalized, policy)
 
@@ -189,16 +233,4 @@ def score(action: Action, policy: Policy | None = None) -> ScoredAction:
     )
 
 
-# ─── Convenience: 3-band mapping for 5D Light consumers ───────
-
 DIM_MAX = 4  # re-export for max_possible calc
-
-def score_light(action: Action, policy: Policy | None = None) -> ScoredAction:
-    """Score using 3-band GO/ASK/STOP mapping (backward compat).
-
-    Maps: GREEN→GO, YELLOW→GO, ORANGE→ASK, RED→STOP.
-    """
-    result = score(action, policy)
-    # Band aliases are already set on the class
-    # Consumers using Band.GO/ASK/STOP will match via the aliases
-    return result

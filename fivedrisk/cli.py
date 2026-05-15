@@ -80,11 +80,11 @@ def cmd_score(args: argparse.Namespace) -> None:
         )
         print(f"  Dims: {dims}")
 
-    # Exit code: 0=GO, 1=ASK, 2=STOP
+    # Exit code: 0=GREEN/YELLOW (execute), 1=ORANGE (HITL), 2=RED (blocked)
     from .schema import Band
-    if result.band == Band.STOP:
+    if result.band == Band.RED:
         sys.exit(2)
-    elif result.band == Band.ASK:
+    elif result.band == Band.ORANGE:
         sys.exit(1)
     else:
         sys.exit(0)

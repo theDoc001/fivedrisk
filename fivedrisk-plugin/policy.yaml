@@ -1,14 +1,18 @@
-# 5D Risk Governance Engine — DotOS Default Policy
-# Tier: Light (GO / ASK / STOP)
-# Version: 0.1.0
+# 5D Risk Governance Engine — Plugin Default Policy
+# 4-band system (GREEN / YELLOW / ORANGE / RED)
 
 version: "0.1.0"
-tier: "light"
 
+# 4-Band normalized score thresholds (§12.4)
+bands:
+  yellow_score: 1.0    # Moderate risk
+  orange_score: 1.8    # High risk, mandatory approval
+  red_score: 2.5       # Critical, deny by default
+
+# Single-axis spike thresholds
 thresholds:
-  stop_threshold: 4        # any single dim >= this → STOP
-  ask_threshold: 3         # any single dim >= this → ASK
-  composite_ask: 8.0       # weighted sum >= this → ASK
+  red_threshold: 4         # any dim >= this → RED
+  orange_threshold: 3      # any dim >= this → ORANGE
 
 weights:
   data_sensitivity: 1.0

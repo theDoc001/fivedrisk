@@ -1,0 +1,47 @@
+name: benchmark
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package with dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[langgraph,dev]"
+
+      - name: Run CI bench
+        run: |
+          python benchmarks/bench_ci.py --json > bench_current.json
+          python benchmarks/bench_ci.py
+
+      - name: Upload bench JSON as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results-${{ github.run_id }}
+          path: bench_current.json
+
+      - name: Regression check (against main baseline)
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ -f benchmarks/baselines/main.json ]; then
+            python benchmarks/check_regression.py \
+              bench_current.json \
+              benchmarks/baselines/main.json
+          else
+            echo "No baseline at benchmarks/baselines/main.json; skipping regression check."
+            echo "To establish a baseline: download the bench-results artifact from a main-branch run and commit it as benchmarks/baselines/main.json."
+          fi

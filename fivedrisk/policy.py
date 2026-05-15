@@ -62,7 +62,6 @@ class Policy:
     """
 
     version: str = "0.2.0"
-    tier: str = "standard"
 
     # ── 4-Band normalized score thresholds (§12.4) ──
     green_score: float = 0.0       # everything below yellow
@@ -73,11 +72,6 @@ class Policy:
     # ── Single-axis spike thresholds ──
     red_threshold: int = 4         # any dim >= this → RED
     orange_threshold: int = 3      # any dim >= this → ORANGE (minimum)
-
-    # ── Legacy 3-band thresholds (backward compat for 5D Light) ──
-    stop_threshold: int = 4
-    ask_threshold: int = 3
-    composite_ask: float = 8.0
 
     # ── Dimension weights ──
     weights: Dict[str, float] = field(default_factory=lambda: dict(DEFAULT_WEIGHTS))
@@ -95,6 +89,29 @@ class Policy:
     # ── Retry budget (per task) ──
     retry_budget: int = 5
 
+    # ── Cost-management attributes ──
+    # Architectural contract: budget breach triggers a direct DENY at the
+    # @gate reservation gate. The 5D Score function does not consume
+    # budget state; admission and scoring are separate paths.
+    max_session_budget_tokens: Optional[int] = None    # session-level token cap
+    max_tool_call_budget_tokens: Optional[int] = None  # per-call output cap
+
+    # ── Identity admission ──
+    identity_required: bool = False                    # deny ANONYMOUS at admission
+
+    # ── YELLOW band behavior ──
+    # Default: 3-band experience (GREEN / ORANGE / RED). Scores that
+    # would land in the YELLOW range are returned as GREEN. Simpler
+    # mental model for OSS users who do not need a moderate tier.
+    # Set enable_yellow_band=True for the 4-band compliance model:
+    # adds a stable moderate-risk label for audit queries and dashboards
+    # that need to track moderate-risk actions over time.
+    enable_yellow_band: bool = False
+    # When YELLOW is enabled, opt in to model-class promotion for D2/D3
+    # data via yellow_model_escalation=True. The caller's stack still
+    # decides whether to honour the routing recommendation.
+    yellow_model_escalation: bool = False
+
     @property
     def weight_vector(self) -> tuple[float, ...]:
         return tuple(self.weights.get(name, 1.0) for name in DIMENSION_NAMES)
@@ -108,6 +125,42 @@ class Policy:
             if re.search(pattern, command):
                 merged.update(overrides)
         return merged
+
+    def admit_session(self, workflow_type: str = "default") -> "AdmissionResult":
+        """Admission check L1: validate policy is configured for the workflow.
+
+        Returns an AdmissionResult with admit=True in either of these cases:
+          - max_session_budget_tokens is configured (the workflow has an
+            explicit budget cap)
+          - max_session_budget_tokens is None (the workflow opts out of
+            budget enforcement; admission succeeds with a warning)
+
+        Additional Operational FinOps admission layers (Tool Manifest
+        validation, historical P95 baselines, post-step reconciliation)
+        are on the project roadmap.
+        """
+        if self.max_session_budget_tokens is None:
+            return AdmissionResult(
+                admit=True,
+                workflow_type=workflow_type,
+                warning="max_session_budget_tokens not configured; admitting without budget enforcement",
+            )
+        return AdmissionResult(
+            admit=True,
+            workflow_type=workflow_type,
+            max_session_budget_tokens=self.max_session_budget_tokens,
+        )
+
+
+@dataclass
+class AdmissionResult:
+    """Outcome of policy.admit_session()."""
+
+    admit: bool
+    workflow_type: str
+    max_session_budget_tokens: Optional[int] = None
+    warning: Optional[str] = None
+    deny_reason: Optional[str] = None
 
 
 def load_policy(path: Optional[str | Path] = None) -> Policy:
@@ -127,18 +180,13 @@ def load_policy(path: Optional[str | Path] = None) -> Policy:
 
     return Policy(
         version=raw.get("version", "0.2.0"),
-        tier=raw.get("tier", "standard"),
         # 4-band score thresholds
         yellow_score=float(bands.get("yellow_score", 1.0)),
         orange_score=float(bands.get("orange_score", 1.8)),
         red_score=float(bands.get("red_score", 2.5)),
         # Spike thresholds
-        red_threshold=thresholds.get("red_threshold", thresholds.get("stop_threshold", 4)),
-        orange_threshold=thresholds.get("orange_threshold", thresholds.get("ask_threshold", 3)),
-        # Legacy
-        stop_threshold=thresholds.get("stop_threshold", 4),
-        ask_threshold=thresholds.get("ask_threshold", 3),
-        composite_ask=float(thresholds.get("composite_ask", 8.0)),
+        red_threshold=thresholds.get("red_threshold", 4),
+        orange_threshold=thresholds.get("orange_threshold", 3),
         # Weights
         weights={**DEFAULT_WEIGHTS, **raw.get("weights", {})},
         # Tools
@@ -151,4 +199,12 @@ def load_policy(path: Optional[str | Path] = None) -> Policy:
             **{k: dict(v) for k, v in raw.get("bash_overrides", {}).items()},
         },
         retry_budget=raw.get("retry_budget", 5),
+        # Cost-management attributes (OSS-COST-MVP-001)
+        max_session_budget_tokens=raw.get("max_session_budget_tokens"),
+        max_tool_call_budget_tokens=raw.get("max_tool_call_budget_tokens"),
+        # Identity admission
+        identity_required=bool(raw.get("identity_required", False)),
+        # YELLOW band behavior
+        enable_yellow_band=bool(raw.get("enable_yellow_band", False)),
+        yellow_model_escalation=bool(raw.get("yellow_model_escalation", False)),
     )

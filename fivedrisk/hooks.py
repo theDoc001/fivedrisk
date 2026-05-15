@@ -48,10 +48,12 @@ import functools
 import inspect
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from collections import defaultdict, deque
 from typing import Any, Callable, Dict, Iterable, Optional
 
+from .budget_accumulator import BudgetAccumulator, ReservationResult
 from .classifier import classify_tool_call
 from .detectors import (
     DETECTOR_CORPUS_VERSION,
@@ -59,11 +61,17 @@ from .detectors import (
     INJECTION_PATTERNS,
     RETRIEVAL_TOOLS,
 )
+from .events import (
+    NDJSONEventChannel,
+    REASON_BUDGET_CAP_EXCEEDED,
+    REASON_IDENTITY_REQUIRED_NOT_SUPPLIED,
+)
 from .logger import DecisionLog
 from .markov import MarkovDriftTracker, make_default_transition_matrix
 from .policy import Policy, load_policy
-from .schema import Band
+from .schema import ActingIdentity, Band, PrincipalType
 from .scorer import _route_model, score
+from .token_costs import worst_case_tokens_for_call
 
 # ─── Module-level defaults — override via configure() ──────────
 
@@ -91,6 +99,30 @@ _HITL_QUEUE_MAX_DEPTH: int = 20           # max pending HITL cards before refusi
 _action_timestamps: Dict[str, deque] = defaultdict(deque)   # session_id → deque of timestamps
 _hitl_queue_depth: int = 0                                   # global pending HITL card count
 
+# ─── Cost-management state ──────────────────────────────────────
+# Architectural contract: budget accumulators are pure accounting. Their
+# state does NOT feed the Score function. Budget breach surfaces as a
+# direct DENY at the @gate reservation gate, separate from risk scoring.
+_budget_accumulators: Dict[str, BudgetAccumulator] = {}
+_event_channel: Optional[NDJSONEventChannel] = None
+_default_model_class: Optional[str] = None
+_default_estimated_input_tokens: int = 1000
+
+
+# ─── DENY exceptions ─────────────────────────────────────────────
+
+class BudgetExceededError(ValueError):
+    """Raised by @gate when a tool call would exceed the session budget.
+
+    Surfaced as a direct DENY at the budget admission gate. The Score
+    function is unchanged; admission and scoring are separate paths.
+    """
+
+
+class IdentityRequiredError(ValueError):
+    """Raised by @gate when policy.identity_required is True and the
+    caller supplied no acting_identity (or ANONYMOUS)."""
+
 
 @dataclass(frozen=True)
 class DestinationPolicyResult:
@@ -112,17 +144,32 @@ def configure(
     destination_allowlist: Optional[Iterable[str]] = None,
     destination_denylist: Optional[Iterable[str]] = None,
     enforce_destination_policy: bool = False,
+    event_path: Optional[str] = None,
+    default_model_class: Optional[str] = None,
+    default_estimated_input_tokens: int = 1000,
 ) -> None:
     """Configure the hooks module.
 
     Call once at agent startup to set policy, log location,
     autonomy context, and DoS defense thresholds.
+
+    New in OSS-COST-MVP-001:
+      - `event_path`: optional path to an NDJSON event log file. Emits
+        risk_decision, budget_intervention, and identity_required_denial
+        events with shared trace_id/session_id for correlation.
+      - `default_model_class`: model class label used for budget
+        reservation when the caller does not pass one explicitly. See
+        token_costs.MODEL_COSTS for valid identifiers.
+      - `default_estimated_input_tokens`: conservative default for
+        per-call input token count when caller does not supply one.
     """
     global _policy, _log, _autonomy_context
     global _RATE_LIMIT_MAX_ACTIONS, _HITL_QUEUE_MAX_DEPTH
     global _drift_transition_matrix, _drift_trackers
     global _require_session_id, _destination_allowlist
     global _destination_denylist, _enforce_destination_policy
+    global _budget_accumulators, _event_channel
+    global _default_model_class, _default_estimated_input_tokens
     _policy = load_policy(policy_path)
     _log = DecisionLog(log_path) if log_path else DecisionLog()
     _autonomy_context = autonomy_context
@@ -144,6 +191,105 @@ def configure(
         _normalize_destination(value) for value in (destination_denylist or [])
     )
     _enforce_destination_policy = enforce_destination_policy
+    _budget_accumulators = {}
+    _event_channel = NDJSONEventChannel(path=event_path) if event_path else None
+    _default_model_class = default_model_class
+    _default_estimated_input_tokens = default_estimated_input_tokens
+
+
+# ─── Budget admission helpers (OSS-COST-MVP-001) ────────────────
+
+
+def _get_or_create_budget_accumulator(
+    session_id: str, policy: Policy
+) -> BudgetAccumulator:
+    """Lazy-create a per-session budget accumulator from the policy cap."""
+    if session_id not in _budget_accumulators:
+        _budget_accumulators[session_id] = BudgetAccumulator(
+            session_id=session_id,
+            max_session_budget_tokens=policy.max_session_budget_tokens,
+        )
+    return _budget_accumulators[session_id]
+
+
+def _perform_budget_admission(
+    tool_id: str,
+    tool_name: str,
+    session_id: Optional[str],
+    policy: Policy,
+    estimated_input_tokens: int,
+    model_class: Optional[str],
+    acting_identity: Optional[ActingIdentity] = None,
+) -> ReservationResult:
+    """Reserve worst-case tokens for this tool call.
+
+    Returns the ReservationResult. Caller checks `.approved`.
+
+    On rejection, emits a budget_intervention NDJSON event. Architectural
+    contract: this function does not modify Score. It returns
+    approved=False so the caller raises BudgetExceededError directly.
+    """
+    if session_id is None or policy.max_session_budget_tokens is None:
+        # No session or no cap; admit without reservation tracking.
+        return ReservationResult(
+            approved=True,
+            cumulative_token_spend=0,
+            max_session_budget_tokens=policy.max_session_budget_tokens,
+            pressure_ratio=0.0,
+            reserved_tokens=0,
+        )
+
+    acc = _get_or_create_budget_accumulator(session_id, policy)
+    effective_model_class = model_class or _default_model_class
+    if effective_model_class is None:
+        # No model class configured. Use input_tokens + default output cap.
+        worst_case = estimated_input_tokens + (policy.max_tool_call_budget_tokens or 4096)
+    else:
+        worst_case = worst_case_tokens_for_call(
+            effective_model_class,
+            estimated_input_tokens,
+            policy.max_tool_call_budget_tokens,
+        )
+
+    result = acc.reserve_for_tool_call(tool_id=tool_id, worst_case_tokens=worst_case)
+
+    if not result.approved and _event_channel is not None:
+        _event_channel.emit_budget_intervention(
+            session_id=session_id,
+            reason_code=result.reason_code or REASON_BUDGET_CAP_EXCEEDED,
+            cumulative_token_spend=result.cumulative_token_spend,
+            max_session_budget_tokens=result.max_session_budget_tokens,
+            pressure_ratio=result.pressure_ratio,
+            tool_id=tool_id,
+            tool_name=tool_name,
+            reserved_tokens=result.reserved_tokens,
+            acting_identity=acting_identity,
+        )
+
+    return result
+
+
+def _perform_identity_admission(
+    tool_name: str,
+    session_id: Optional[str],
+    policy: Policy,
+    acting_identity: Optional[ActingIdentity],
+) -> bool:
+    """Check identity_required policy. Returns True if admitted.
+
+    On rejection, emits an identity_required_denial NDJSON event.
+    """
+    if not policy.identity_required:
+        return True
+    if acting_identity is None or acting_identity.principal_type == PrincipalType.ANONYMOUS:
+        if _event_channel is not None:
+            _event_channel.emit_identity_required_denial(
+                session_id=session_id,
+                tool_name=tool_name,
+                attempted_identity=acting_identity,
+            )
+        return False
+    return True
 
 
 def hitl_queue_increment() -> None:
@@ -338,6 +484,9 @@ def gate(
     policy: Optional[Policy] = None,
     log: Optional[DecisionLog] = None,
     on_block: Optional[Callable[[str], Any]] = None,
+    acting_identity: Optional[ActingIdentity] = None,
+    model_class: Optional[str] = None,
+    estimated_input_tokens: Optional[int] = None,
 ):
     """Decorator: wrap any Python function with 5D scoring.
 
@@ -365,10 +514,27 @@ def gate(
     """
     _use_policy = policy or _policy
     _use_log = log or _log or DecisionLog()
+    _decorator_acting_identity = acting_identity
+    _decorator_model_class = model_class
+    _decorator_input_tokens = estimated_input_tokens
 
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
+            # Pop per-call overrides before building tool_input
+            call_acting_identity = kwargs.pop(
+                "_fivedrisk_acting_identity", _decorator_acting_identity
+            )
+            call_model_class = kwargs.pop(
+                "_fivedrisk_model_class", _decorator_model_class
+            )
+            call_input_tokens = kwargs.pop(
+                "_fivedrisk_input_tokens",
+                _decorator_input_tokens
+                if _decorator_input_tokens is not None
+                else _default_estimated_input_tokens,
+            )
+
             # Build tool_input from args/kwargs for classifier
             tool_input: Dict[str, Any] = {}
             if args:
@@ -383,12 +549,47 @@ def gate(
                 autonomy_context=autonomy_context,
                 source="gate-decorator",
             )
+            if call_acting_identity is not None:
+                action.acting_identity = call_acting_identity
+
             session_id = _resolve_gate_session_id(args, kwargs)
             if _require_session_id and session_id is None:
                 reason = _session_required_message()
                 if on_block:
                     return on_block(reason)
                 raise ValueError(reason)
+
+            # Identity admission
+            if not _perform_identity_admission(
+                tool_name, session_id, _use_policy, call_acting_identity
+            ):
+                reason = (
+                    f"5D IDENTITY_REQUIRED_NOT_SUPPLIED ({tool_name}): "
+                    f"policy requires identity, none supplied"
+                )
+                if on_block:
+                    return on_block(reason)
+                raise IdentityRequiredError(reason)
+
+            # Budget admission
+            tool_call_id = uuid.uuid4().hex[:12]
+            reservation = _perform_budget_admission(
+                tool_id=tool_call_id,
+                tool_name=tool_name,
+                session_id=session_id,
+                policy=_use_policy,
+                estimated_input_tokens=call_input_tokens,
+                model_class=call_model_class,
+                acting_identity=call_acting_identity,
+            )
+            if not reservation.approved:
+                reason = (
+                    f"5D {reservation.reason_code} ({tool_name}): "
+                    f"projected spend would exceed max_session_budget_tokens"
+                )
+                if on_block:
+                    return on_block(reason)
+                raise BudgetExceededError(reason)
 
             destination_check = check_destination_policy(tool_name, tool_input)
             if destination_check and destination_check.decision == "block":
@@ -405,22 +606,57 @@ def gate(
                 )
             _use_log.log(result)
 
-            if result.band in (Band.STOP, Band.RED):
-                reason = f"5D STOP ({result.band}): {result.rationale}"
+            # Emit risk_decision NDJSON event with identity correlation
+            if _event_channel is not None:
+                _event_channel.emit_risk_decision(
+                    session_id=session_id,
+                    scored_action=result,
+                    acting_identity=call_acting_identity,
+                )
+
+            if result.band == Band.RED:
+                reason = f"5D RED ({result.band}): {result.rationale}"
+                # roll back the reservation; the action did not execute
+                if session_id and session_id in _budget_accumulators:
+                    _budget_accumulators[session_id].cancel_reservation(tool_call_id)
                 if on_block:
                     return on_block(reason)
                 raise ValueError(reason)
 
-            if result.band in (Band.ASK, Band.ORANGE):
-                reason = f"5D ASK ({result.band}): {result.rationale}"
+            if result.band == Band.ORANGE:
+                reason = f"5D ORANGE ({result.band}): {result.rationale}"
+                if session_id and session_id in _budget_accumulators:
+                    _budget_accumulators[session_id].cancel_reservation(tool_call_id)
                 if on_block:
                     return on_block(reason)
                 raise ValueError(reason)
 
-            return fn(*args, **kwargs)
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                # Commit at worst-case (conservative; actual token count
+                # is unknown to OSS @gate). Replace with measured count
+                # by passing _fivedrisk_actual_tokens in callable kwargs
+                # if your wrapper has post-call instrumentation.
+                if session_id and session_id in _budget_accumulators:
+                    _budget_accumulators[session_id].commit_reservation(
+                        tool_call_id, actual_tokens=reservation.reserved_tokens
+                    )
 
         @functools.wraps(fn)
         async def async_wrapper(*args, **kwargs):
+            call_acting_identity = kwargs.pop(
+                "_fivedrisk_acting_identity", _decorator_acting_identity
+            )
+            call_model_class = kwargs.pop(
+                "_fivedrisk_model_class", _decorator_model_class
+            )
+            call_input_tokens = kwargs.pop(
+                "_fivedrisk_input_tokens",
+                _decorator_input_tokens
+                if _decorator_input_tokens is not None
+                else _default_estimated_input_tokens,
+            )
             tool_input: Dict[str, Any] = {}
             if args:
                 tool_input["_args"] = str(args)
@@ -434,6 +670,9 @@ def gate(
                 autonomy_context=autonomy_context,
                 source="gate-decorator",
             )
+            if call_acting_identity is not None:
+                action.acting_identity = call_acting_identity
+
             session_id = _resolve_gate_session_id(args, kwargs)
             if _require_session_id and session_id is None:
                 reason = _session_required_message()
@@ -441,8 +680,42 @@ def gate(
                     return (await on_block(reason)) if inspect.iscoroutinefunction(on_block) else on_block(reason)
                 raise ValueError(reason)
 
+            # OSS-PASS-THROUGH-IDENTITY-001 admission
+            if not _perform_identity_admission(
+                tool_name, session_id, _use_policy, call_acting_identity
+            ):
+                reason = (
+                    f"5D IDENTITY_REQUIRED_NOT_SUPPLIED ({tool_name}): "
+                    f"policy requires identity, none supplied"
+                )
+                if on_block:
+                    return (await on_block(reason)) if inspect.iscoroutinefunction(on_block) else on_block(reason)
+                raise IdentityRequiredError(reason)
+
+            # OSS-COST-MVP-001 budget admission
+            tool_call_id = uuid.uuid4().hex[:12]
+            reservation = _perform_budget_admission(
+                tool_id=tool_call_id,
+                tool_name=tool_name,
+                session_id=session_id,
+                policy=_use_policy,
+                estimated_input_tokens=call_input_tokens,
+                model_class=call_model_class,
+                acting_identity=call_acting_identity,
+            )
+            if not reservation.approved:
+                reason = (
+                    f"5D {reservation.reason_code} ({tool_name}): "
+                    f"projected spend would exceed max_session_budget_tokens"
+                )
+                if on_block:
+                    return (await on_block(reason)) if inspect.iscoroutinefunction(on_block) else on_block(reason)
+                raise BudgetExceededError(reason)
+
             destination_check = check_destination_policy(tool_name, tool_input)
             if destination_check and destination_check.decision == "block":
+                if session_id and session_id in _budget_accumulators:
+                    _budget_accumulators[session_id].cancel_reservation(tool_call_id)
                 if on_block:
                     return (await on_block(destination_check.reason)) if inspect.iscoroutinefunction(on_block) else on_block(destination_check.reason)
                 raise ValueError(destination_check.reason)
@@ -456,21 +729,38 @@ def gate(
                 )
             _use_log.log(result)
 
-            if result.band in (Band.STOP, Band.RED):
-                reason = f"5D STOP ({result.band}): {result.rationale}"
+            if _event_channel is not None:
+                _event_channel.emit_risk_decision(
+                    session_id=session_id,
+                    scored_action=result,
+                    acting_identity=call_acting_identity,
+                )
+
+            if result.band == Band.RED:
+                reason = f"5D RED ({result.band}): {result.rationale}"
+                if session_id and session_id in _budget_accumulators:
+                    _budget_accumulators[session_id].cancel_reservation(tool_call_id)
                 if on_block:
                     return (await on_block(reason)) if asyncio.iscoroutinefunction(on_block) else on_block(reason)
                 raise ValueError(reason)
 
-            if result.band in (Band.ASK, Band.ORANGE):
-                reason = f"5D ASK ({result.band}): {result.rationale}"
+            if result.band == Band.ORANGE:
+                reason = f"5D ORANGE ({result.band}): {result.rationale}"
+                if session_id and session_id in _budget_accumulators:
+                    _budget_accumulators[session_id].cancel_reservation(tool_call_id)
                 if on_block:
                     return (await on_block(reason)) if asyncio.iscoroutinefunction(on_block) else on_block(reason)
                 raise ValueError(reason)
 
-            if inspect.iscoroutinefunction(fn):
-                return await fn(*args, **kwargs)
-            return fn(*args, **kwargs)
+            try:
+                if inspect.iscoroutinefunction(fn):
+                    return await fn(*args, **kwargs)
+                return fn(*args, **kwargs)
+            finally:
+                if session_id and session_id in _budget_accumulators:
+                    _budget_accumulators[session_id].commit_reservation(
+                        tool_call_id, actual_tokens=reservation.reserved_tokens
+                    )
 
         return async_wrapper if inspect.iscoroutinefunction(fn) else wrapper
 

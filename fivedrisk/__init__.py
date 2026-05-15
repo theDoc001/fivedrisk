@@ -27,9 +27,18 @@ try:
 except PackageNotFoundError:  # editable / source checkout without metadata
     __version__ = "0.0.0+unknown"
 
+from .budget_accumulator import BudgetAccumulator, ReservationResult
 from .classifier import classify_tool_call
 from .drift import DriftBump, SessionAccumulator
+from .events import (
+    NDJSONEventChannel,
+    REASON_BUDGET_CAP_EXCEEDED,
+    REASON_BUDGET_RESERVATION_BLOCKED,
+    REASON_IDENTITY_REQUIRED_NOT_SUPPLIED,
+)
 from .hooks import (
+    BudgetExceededError,
+    IdentityRequiredError,
     check_destination_policy,
     configure,
     extract_external_destinations,
@@ -56,46 +65,68 @@ from .markov import (
     state_to_index,
 )
 from .logger import DecisionLog
-from .policy import Policy, load_policy
+from .policy import AdmissionResult, Policy, load_policy
 from .router import ModelRouter, ModelConfig, EscalationSignal
 from .schema import (
     Action,
+    ActingIdentity,
+    AttestationSource,
+    AutonomySignals,
     Band,
     HITLCard,
     ModelClass,
+    PrincipalType,
     RoutingDecision,
     ScoredAction,
 )
-from .scorer import score, score_light
+from .scorer import score
+from .token_costs import MODEL_COSTS, ModelCost, get_model_cost
 
 __all__ = [
     "Action",
+    "ActingIdentity",
+    "AdmissionResult",
+    "AttestationSource",
+    "AutonomySignals",
     "Band",
+    "BudgetAccumulator",
+    "BudgetExceededError",
     "DecisionLog",
+    "DriftBump",
     "EscalationSignal",
     "HITLCard",
+    "IdentityRequiredError",
+    "MarkovDriftTracker",
+    "MODEL_COSTS",
     "ModelClass",
     "ModelConfig",
+    "ModelCost",
     "ModelRouter",
+    "NDJSONEventChannel",
     "Policy",
+    "PrincipalType",
+    "REASON_BUDGET_CAP_EXCEEDED",
+    "REASON_BUDGET_RESERVATION_BLOCKED",
+    "REASON_IDENTITY_REQUIRED_NOT_SUPPLIED",
+    "ReservationResult",
     "RoutingDecision",
     "ScoredAction",
-    "classify_tool_call",
+    "SessionAccumulator",
+    "build_transition_matrix",
     "check_destination_policy",
+    "classify_tool_call",
+    "compute_absorption_probabilities",
     "configure",
-    "DriftBump",
     "extract_external_destinations",
     "fivedrisk_post_tool",
     "fivedrisk_pre_tool",
     "gate",
+    "get_model_cost",
     "hitl_queue_decrement",
     "hitl_queue_increment",
-    "load_policy",
-    "MarkovDriftTracker",
-    "build_transition_matrix",
-    "compute_absorption_probabilities",
     "index_to_state",
     "is_absorbing",
+    "load_policy",
     "make_default_transition_matrix",
     "matmul",
     "matrix_inverse",
@@ -104,8 +135,6 @@ __all__ = [
     "scan_output_for_leakage",
     "scan_retrieved_content",
     "score",
-    "score_light",
     "session_id_conventions",
     "state_to_index",
-    "SessionAccumulator",
 ]
