@@ -1,8 +1,6 @@
 """Tests for BudgetAccumulator.
 
-Pure accounting tests: reservation math, commit, rollback, pressure
-ratio. Pins down the architectural contract that the accumulator does
-not feed the Score function.
+Reservation math, commit, rollback, pressure ratio, snapshot.
 """
 
 from __future__ import annotations
@@ -100,19 +98,9 @@ class TestPressureRatio:
         acc.commit_reservation("c1", actual_tokens=3000)
         assert acc.get_pressure_ratio() == 0.3
 
-    def test_pressure_ratio_is_telemetry_only(self) -> None:
-        """Architectural contract: pressure_ratio is for telemetry only.
-
-        get_pressure_ratio() exists for NDJSON / dashboard consumption.
-        It must remain accessible via the accumulator API but must not
-        be consumed by the Score function or Band classification.
-
-        This test pins down the public contract: the method exists and
-        returns a float in [0, 1]. Any future change that wires
-        pressure_ratio into score() should be flagged for review;
-        budget admission and risk scoring are deliberately separate
-        paths.
-        """
+    def test_pressure_ratio_returns_float_in_unit_interval(self) -> None:
+        """get_pressure_ratio() returns a float between 0 and 1 for
+        consumption by NDJSON events and dashboard telemetry."""
         acc = BudgetAccumulator(session_id="s1", max_session_budget_tokens=10000)
         acc.reserve_for_tool_call("c1", 5000)
         ratio = acc.get_pressure_ratio()

@@ -166,7 +166,7 @@ Runs 39 offline attack scenarios across: prompt injection (12 categories), outpu
 
 ## Performance
 
-Measured on Apple Silicon M1, Python 3.14, single-thread, quiet system. Reproducible from `benchmarks/bench_minimal.py`.
+Measured on Apple M1, single-thread. Reproducible from `benchmarks/bench_minimal.py`.
 
 | Operation | p50 | p99 |
 |---|---|---|
@@ -186,7 +186,7 @@ External optional layers (not in fivedrisk):
 - [LLM Guard](https://llm-guard.com) (token scanners): ~10-15ms typical
 - [LLM Guard](https://llm-guard.com) (ML scanners): ~50-200ms typical
 
-Injection scanner is linear in input length; for large RAG contexts, chunk and parallelize. macOS background scheduling can widen p99 under load; numbers above are quiet-system. SQLite writes are substantially slower inside iCloud Drive directories (not a fivedrisk issue).
+Injection scanner is linear in input length; for large RAG contexts, chunk and parallelize. Run the bench script on your target hardware for numbers that match your install.
 
 ---
 
@@ -241,7 +241,7 @@ Identity-aware policy evaluation beyond admission, cryptographic validation, and
 
 ## Cost management primitives
 
-Per-session token budgeting with direct DENY at @gate when a reservation would exceed the session cap. Pure accounting; the budget accumulator does NOT feed the 5D Score function.
+Per-session token budgeting with direct DENY at @gate when a reservation would exceed the session cap.
 
 ```yaml
 # policy.yaml
@@ -259,7 +259,7 @@ def summarize(text: str, session_id: str) -> str:
     ...
 ```
 
-If the projected token spend exceeds `max_session_budget_tokens`, @gate raises `BudgetExceededError` directly and emits a `budget_intervention` NDJSON event. The 5D Score function is not modified by budget pressure; budget breach is a separate admission gate.
+If the projected token spend exceeds `max_session_budget_tokens`, @gate raises `BudgetExceededError` and emits a `budget_intervention` NDJSON event.
 
 Additional Operational FinOps capabilities (Tool Manifest admission layers, useful-progress monitoring, multi-agent budget envelopes, wall-clock / retry / delegation caps) are on the project roadmap.
 

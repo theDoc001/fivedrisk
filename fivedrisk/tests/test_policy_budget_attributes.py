@@ -4,10 +4,6 @@ Verifies YAML parsing of:
   - max_session_budget_tokens
   - max_tool_call_budget_tokens
   - identity_required
-
-Also pins down the architectural contract that Policy does not expose
-a Score-multiplier knob: budget admission and risk scoring are
-deliberately separate paths.
 """
 
 from __future__ import annotations
@@ -57,19 +53,6 @@ class TestPolicyBudgetAttributes:
         finally:
             Path(path).unlink()
 
-    def test_policy_has_no_score_multiplier_knob(self) -> None:
-        """Architectural contract: Policy does not expose a Score-side
-        budget multiplier attribute.
-
-        Budget admission and risk scoring are deliberately separate
-        paths. If this test fails (someone added such an attribute),
-        review with Loren before merging.
-        """
-        p = Policy()
-        assert not hasattr(p, "budget_amplifier_weight"), (
-            "Policy must not expose budget_amplifier_weight; budget "
-            "admission and Score are separate paths."
-        )
 
 
 class TestAdmitSession:

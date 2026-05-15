@@ -100,9 +100,6 @@ _action_timestamps: Dict[str, deque] = defaultdict(deque)   # session_id → deq
 _hitl_queue_depth: int = 0                                   # global pending HITL card count
 
 # ─── Cost-management state ──────────────────────────────────────
-# Architectural contract: budget accumulators are pure accounting. Their
-# state does NOT feed the Score function. Budget breach surfaces as a
-# direct DENY at the @gate reservation gate, separate from risk scoring.
 _budget_accumulators: Dict[str, BudgetAccumulator] = {}
 _event_channel: Optional[NDJSONEventChannel] = None
 _default_model_class: Optional[str] = None
@@ -112,11 +109,7 @@ _default_estimated_input_tokens: int = 1000
 # ─── DENY exceptions ─────────────────────────────────────────────
 
 class BudgetExceededError(ValueError):
-    """Raised by @gate when a tool call would exceed the session budget.
-
-    Surfaced as a direct DENY at the budget admission gate. The Score
-    function is unchanged; admission and scoring are separate paths.
-    """
+    """Raised by @gate when a tool call would exceed the session budget."""
 
 
 class IdentityRequiredError(ValueError):
@@ -223,11 +216,9 @@ def _perform_budget_admission(
 ) -> ReservationResult:
     """Reserve worst-case tokens for this tool call.
 
-    Returns the ReservationResult. Caller checks `.approved`.
-
-    On rejection, emits a budget_intervention NDJSON event. Architectural
-    contract: this function does not modify Score. It returns
-    approved=False so the caller raises BudgetExceededError directly.
+    Returns the ReservationResult. Caller checks `.approved`. On
+    rejection, emits a budget_intervention NDJSON event and the caller
+    raises BudgetExceededError.
     """
     if session_id is None or policy.max_session_budget_tokens is None:
         # No session or no cap; admit without reservation tracking.

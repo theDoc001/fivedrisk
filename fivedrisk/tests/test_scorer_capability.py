@@ -108,6 +108,26 @@ class TestScorerCapability:
         result = score(Action(tool_name="Read", tool_input={}, data_sensitivity=1))
         assert "max_dim" in result.rationale
 
+    def test_yellow_model_escalation_inert_without_enable_yellow_band(self):
+        """yellow_model_escalation has no effect when enable_yellow_band
+        is False. The default 3-band experience folds YELLOW scores into
+        GREEN; the model-escalation flag is meaningful only inside the
+        4-band compliance mode."""
+        weights = {"data_sensitivity": 6.0, "tool_privilege": 0.0,
+                   "reversibility": 0.0, "external_impact": 0.0,
+                   "autonomy_context": 0.0}
+        # Enable model escalation but NOT the yellow band itself
+        policy = Policy(weights=weights, yellow_model_escalation=True)
+        result = score(
+            Action(tool_name="Read", tool_input={}, data_sensitivity=2),
+            policy,
+        )
+        # Score range that would be YELLOW collapses to GREEN; model
+        # escalation suggestion does not fire because there is no
+        # YELLOW band to escalate within.
+        assert result.band == Band.GREEN
+        assert result.routing.verification_level == "standard"
+
     def test_yellow_band_can_come_from_composite(self):
         """YELLOW band requires enable_yellow_band=True (4-band mode)."""
         policy = Policy(

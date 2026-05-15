@@ -1,24 +1,16 @@
 """Per-session budget accumulator for cost-management primitives.
 
-This module is pure accounting. It tracks cumulative token spend per
-session and answers reservation requests. It does NOT feed the 5D Score
-function or Band classification — budget admission and risk scoring are
-deliberately separate paths.
+Tracks cumulative token spend per session and answers reservation
+requests from the @gate interceptor.
 
 The accumulator answers three operational questions:
 
   1. Can this tool call be reserved without exceeding the session budget?
      (used by the @gate interceptor to decide direct DENY vs allow)
   2. How much have I spent vs my cap, as a ratio?
-     (informational; pressure_ratio is for telemetry, not scoring)
+     (informational; pressure_ratio is for telemetry / NDJSON events)
   3. Roll the reservation forward to actual cost when the call completes,
      freeing the difference back into the session budget.
-
-Architectural contract: this module exports get_pressure_ratio() for
-telemetry / NDJSON consumption only. The ratio is not wired into Score
-or Band calculation anywhere in this codebase. Budget breach surfaces
-as a direct DENY at the @gate reservation gate, separate from the risk
-scoring path.
 """
 
 from __future__ import annotations
@@ -153,9 +145,7 @@ class BudgetAccumulator:
     def get_pressure_ratio(self) -> float:
         """Return cumulative_spend / max_budget. 0.0 if no cap configured.
 
-        For telemetry / NDJSON consumption only. Score and Band
-        classification do not consume budget state; budget admission is a
-        separate path.
+        Useful for telemetry, dashboards, and NDJSON event payloads.
         """
         return self._compute_pressure_ratio()
 

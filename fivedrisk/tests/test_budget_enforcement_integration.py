@@ -4,12 +4,6 @@ Simulates a synthetic agent session that triggers BUDGET_CAP_EXCEEDED.
 Asserts that:
   - The @gate decorator raises BudgetExceededError (direct DENY).
   - An NDJSON budget_intervention event is emitted.
-  - The Score function is unchanged; budget admission is a separate
-    path from risk scoring.
-
-This is the load-bearing test for the architectural contract: the
-failure mode is explicit DENY at the budget admission gate, not a
-Band shift inside score().
 """
 
 from __future__ import annotations
@@ -62,18 +56,11 @@ class TestBudgetEnforcementAtGate:
             for e in events
         )
 
-    def test_budget_admission_does_not_modify_score(self, tmp_event_path) -> None:
-        """Architectural contract: budget admission and Score are separate paths.
-
-        When budget admission rejects a call, it raises BudgetExceededError
-        directly. The 5D Score function is never invoked with budget data
-        and its return value cannot be influenced by budget pressure.
-
-        This test pins down that contract: a budget-exceeded call never
-        produces a ScoredAction whose band was modified by budget state.
-        If a future change wires budget into score(), the test should
-        break and the change reviewed.
-        """
+    def test_budget_exceeded_raises_direct_deny(self, tmp_event_path) -> None:
+        """When budget admission rejects a call, it raises
+        BudgetExceededError directly. The 5D Score function returns its
+        normal result for a separate Action with the same input;
+        admission denial is unrelated to score()."""
         configure(event_path=str(tmp_event_path), default_model_class="gpt-4-class")
         from fivedrisk import hooks as h
         h._policy = Policy(max_session_budget_tokens=10)

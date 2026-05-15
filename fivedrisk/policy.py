@@ -90,9 +90,7 @@ class Policy:
     retry_budget: int = 5
 
     # ── Cost-management attributes ──
-    # Architectural contract: budget breach triggers a direct DENY at the
-    # @gate reservation gate. The 5D Score function does not consume
-    # budget state; admission and scoring are separate paths.
+    # Budget breach triggers a direct DENY at the @gate reservation gate.
     max_session_budget_tokens: Optional[int] = None    # session-level token cap
     max_tool_call_budget_tokens: Optional[int] = None  # per-call output cap
 

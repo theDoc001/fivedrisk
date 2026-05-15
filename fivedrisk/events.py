@@ -11,8 +11,7 @@ Three event types ship in OSS:
     present.
   - `budget_intervention`: emitted by @gate when a tool call would
     exceed max_session_budget_tokens. Direct-DENY signal at the budget
-    admission gate; the 5D Score function is unchanged (see
-    budget_accumulator.py).
+    admission gate (see budget_accumulator.py).
   - `identity_required_denial`: emitted by @gate when policy declares
     identity_required and the caller supplied ANONYMOUS.
 
@@ -141,9 +140,8 @@ class NDJSONEventChannel:
     ) -> None:
         """Emit a budget intervention event.
 
-        This is the sole channel through which budget breaches surface.
-        The 5D Score function is unchanged; budget admission is a
-        separate gate from risk scoring.
+        This is the channel through which budget breaches surface in
+        the NDJSON event stream.
         """
         event: Dict[str, Any] = {
             "event_type": "budget_intervention",

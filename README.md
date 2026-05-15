@@ -187,7 +187,7 @@ For the full coverage map across threat catalogues see the [Coverage](#coverage)
 
 ## Performance
 
-Measured on Apple Silicon M1, Python 3.14, single-thread, quiet system. Numbers reproducible from `benchmarks/bench_minimal.py`.
+Measured on Apple M1, single-thread. Numbers reproducible from `benchmarks/bench_minimal.py`.
 
 | Operation | p50 | p95 | p99 |
 |---|---|---|---|
@@ -209,12 +209,10 @@ External optional layers (not in fivedrisk, integration only):
 - [LLM Guard](https://llm-guard.com) token-based scanners: ~10-15ms typical
 - [LLM Guard](https://llm-guard.com) ML-based scanners: ~50-200ms typical
 
-**Honest caveats:**
+**Caveats:**
 
 - The injection scanner is linear in input length; for large RAG contexts (3000+ chars), chunk and parallelize.
-- macOS background scheduling can widen the p50 to p99 ratio under heavy system load. Numbers above were measured on a quiet system. Busy laptops and CI environments may see 2-4x higher p99.
-- Numbers above are M1 outside iCloud Drive. Inside iCloud sync directories, SQLite operations are substantially slower due to filesystem sync behaviour (not a fivedrisk issue, but worth knowing).
-- M2/M3 are typically 10 to 30% faster than M1. x86 server CPUs vary; benchmarks against your target hardware are the only honest source.
+- Run `python benchmarks/bench_minimal.py` on your target hardware for numbers that match your install.
 
 ---
 
@@ -295,7 +293,7 @@ identity_required: true
 
 ## Cost management primitives
 
-Per-session token budgeting with direct DENY at the @gate boundary when a reservation would exceed the session cap. Pure accounting — the budget accumulator does NOT feed the 5D Score function.
+Per-session token budgeting with direct DENY at the @gate boundary when a reservation would exceed the session cap.
 
 ```yaml
 # policy.yaml
@@ -322,8 +320,8 @@ def summarize_document(text: str, session_id: str) -> str:
 
 1. At session start, `policy.admit_session(workflow_type)` validates the budget is configured. Missing cap is admitted with a warning.
 2. Before each `@gate`-wrapped call, fivedrisk looks up the tool's worst-case token cost from `token_costs.py` and calls `BudgetAccumulator.reserve_for_tool_call()`.
-3. If the reservation would exceed `max_session_budget_tokens`, the @gate raises `BudgetExceededError` directly. The 5D Score function is not invoked with budget pressure; budget breach is a separate admission gate.
-4. If the reservation succeeds, the action proceeds through the normal 5D scoring path unchanged.
+3. If the reservation would exceed `max_session_budget_tokens`, the @gate raises `BudgetExceededError`. The action does not run; a `budget_intervention` NDJSON event is emitted.
+4. If the reservation succeeds, the action proceeds through the normal 5D scoring path.
 
 **Example NDJSON budget_intervention event:**
 
