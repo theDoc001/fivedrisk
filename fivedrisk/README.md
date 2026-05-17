@@ -4,7 +4,17 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://github.com/theDoc001/fivedrisk/actions/workflows/tests.yml/badge.svg)](https://github.com/theDoc001/fivedrisk/actions/workflows/tests.yml)
 
-**Per-action risk scoring and governance for AI agents.** Drop one decorator on your tool functions, or wire in the Agent SDK hooks — every action is scored, gated, and logged before it runs.
+**fivedrisk** is an open-source runtime policy engine for AI agents. 
+
+**Safe AI is reliable AI. Reliable AI is the only AI that scales.** fivedrisk scores every agent action on five deterministic risk dimensions before it runs, gates execution with policy as code, and writes an append-only audit log of every decision. 
+
+- No LLM in the decision path. 
+- No external service. 
+- No hyperscaler dependency. 
+- Markov drift detection.
+
+Apache 2.0. **Built in Vienna, Austria.** Written for developers who need verifiable safety in their stack, under their law.
+
 
 ```python
 from fivedrisk.hooks import gate

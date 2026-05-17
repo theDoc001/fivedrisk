@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fivedrisk"
-version = "0.5.0"
+version = "0.5.1"
 description = "Per-action AI agent risk scoring and governance: 5-dimension scoring, HITL enforcement, Markov drift detection, injection scanning, and auditable decision logs."
 readme = { file = "fivedrisk/README.md", content-type = "text/markdown" }
 license = { text = "Apache-2.0" }

@@ -5,7 +5,19 @@ All notable changes to **fivedrisk** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [0.5.1] — 2026-05-19
 
+Docs-only release. No code, behavior, or test changes from v0.5.0.
+
+### Changed
+- README opener refreshed to lead with worldview positioning: deterministic action-layer governance, open source, local-first, no hyperscaler dependency. The library is unchanged; the positioning catches up with how it has been used in practice.
+
+### Notes
+- pyproject version bumped 0.5.0 → 0.5.1 to mark the documentation refresh.
+- No PyPI long_description action needed; it pulls from `dev/fivedrisk/README.md` on twine upload.
+- Manual GitHub UI step: update repo description on github.com/theDoc001/fivedrisk to align with new README opener.
+
+---
 ## [0.4.1] — 2026-05-08
 
 Patch release. No API breakage; ships safely on top of any v0.4.0 install.
