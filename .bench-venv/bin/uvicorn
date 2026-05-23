@@ -1,8 +1,0 @@
-#!/bin/sh
-'''exec' "/Users/langoni/Library/Mobile Documents/com~apple~CloudDocs/AI Lab/Claude Workbench/projects/fivedrisk-oss/dev/.bench-venv/bin/python3.11" "$0" "$@"
-' '''
-import sys
-from uvicorn.main import main
-if __name__ == '__main__':
-    sys.argv[0] = sys.argv[0].removesuffix('.exe')
-    sys.exit(main())

@@ -40,3 +40,21 @@ env/
 
 # Pre-publish drafts (release deliberately with cosigner credit per master pitch §4.3)
 docs/
+
+cat >> .gitignore <<'EOF'
+
+# Any venv directory inside the repo (catch-all per feedback_venvs_outside_icloud)
+*venv*/
+.*-venv/
+
+# Calibration data lives in vault/testing/benchmarks/ until the v0.5.2
+# comparison report ships (task #52)
+benchmarks/aiid-reconstructions.yaml
+
+# Any venv directory inside the repo (catch-all per feedback_venvs_outside_icloud)
+*venv*/
+.*-venv/
+
+# Calibration data lives in vault/testing/benchmarks/ until the v0.5.2
+# comparison report ships (task #52)
+benchmarks/aiid-reconstructions.yaml
