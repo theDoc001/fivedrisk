@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fivedrisk"
-version = "0.5.1"
+version = "0.5.2"
 description = "Per-action AI agent risk scoring and governance: 5-dimension scoring, HITL enforcement, Markov drift detection, injection scanning, and auditable decision logs."
 readme = { file = "fivedrisk/README.md", content-type = "text/markdown" }
 license = { text = "Apache-2.0" }
@@ -56,7 +56,7 @@ where = ["."]
 include = ["fivedrisk*"]
 
 [tool.setuptools.package-data]
-fivedrisk = ["*.yaml", "fixtures/**/*"]
+fivedrisk = ["*.yaml", "fixtures/**/*", "policies/presets/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["fivedrisk/tests"]

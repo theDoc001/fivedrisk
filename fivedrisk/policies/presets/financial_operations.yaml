@@ -1,0 +1,72 @@
+# fivedrisk preset — financial_operations
+#
+# For agents that touch money-moving systems: payment APIs, ledger writes,
+# refund issuance, fee adjustments, balance transfers. Optimised for the
+# financial-services failure mode: irreversible actions to external parties.
+#
+# This preset is intentionally strict. It will block more than it allows
+# until you extend `tool_defaults` with your domain-specific tools (the
+# quickstart's section 5 walks through this).
+#
+# Identity is required: anonymous callers are denied at admission.
+
+version: "0.2.0"
+
+bands:
+  yellow_score: 0.8
+  orange_score: 1.2        # well below default 1.8
+  red_score: 1.8           # well below default 2.5
+
+thresholds:
+  red_threshold: 3         # single dim >=3 trips RED
+  orange_threshold: 2
+
+enable_yellow_band: true
+
+# Reversibility and external impact carry more weight than the defaults.
+# Money sent to the wrong party is the canonical fivedrisk failure mode.
+weights:
+  data_sensitivity: 1.4
+  tool_privilege: 1.0
+  reversibility: 1.8       # was 1.5
+  external_impact: 1.2     # was 0.8
+  autonomy_context: 0.8
+
+# Identity admission is on. Caller must supply ActingIdentity.
+identity_required: true
+
+# Conservative tool defaults; the user MUST extend with domain tools
+# (send_invoice, transfer_funds, issue_refund, etc.). Without those entries,
+# domain tools fall back to defaults that may not reflect their real cost.
+tool_defaults:
+  Read:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Edit:
+    tool_privilege: 2
+    reversibility: 2
+    external_impact: 0
+  Write:
+    tool_privilege: 2
+    reversibility: 2
+    external_impact: 0
+  Bash:
+    tool_privilege: 3
+    reversibility: 3
+    external_impact: 2
+  WebFetch:
+    tool_privilege: 3
+    reversibility: 1
+    external_impact: 3
+
+# Example: extend these for your real money-moving tools.
+# tool_defaults:
+#   transfer_funds:
+#     tool_privilege: 4
+#     reversibility: 4
+#     external_impact: 3
+#   issue_refund:
+#     tool_privilege: 3
+#     reversibility: 3
+#     external_impact: 3

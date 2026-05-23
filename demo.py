@@ -237,7 +237,7 @@ def run_demo():
     print(f"  {ORANGE}🟠  Scenario 5: SafetyDrift — escalated to ASK after 4 boundary hits{RESET}")
     print()
     print(DIM + "  Every decision logged. Every dimension scored. No black boxes." + RESET)
-    print(DIM + "  Apache-2.0 — github.com/theDoc001/dotos-seed" + RESET)
+    print(DIM + "  Apache-2.0 - github.com/theDoc001/fivedrisk" + RESET)
     print()
     hr("═")
     print()

@@ -1,7 +1,7 @@
 {
   "tool_name": "Write",
   "tool_input": {
-    "file_path": "/tmp/dotos_scratch_buffer_test.txt",
+    "file_path": "/tmp/fivedrisk_scratch_buffer_test.txt",
     "content": "Temporary buffer for scratch work. Auto-cleanup on reboot."
   },
   "expected_band": "GREEN",

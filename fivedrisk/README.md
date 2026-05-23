@@ -3,18 +3,44 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://github.com/theDoc001/fivedrisk/actions/workflows/tests.yml/badge.svg)](https://github.com/theDoc001/fivedrisk/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/fivedrisk.svg)](https://pypi.org/project/fivedrisk/)
 
-**fivedrisk** is an open-source runtime policy engine for AI agents. 
+**fivedrisk is the fast deterministic policy gate that runs before your LLM-based safety stack.**
 
-**Safe AI is reliable AI. Reliable AI is the only AI that scales.** fivedrisk scores every agent action on five deterministic risk dimensions before it runs, gates execution with policy as code, and writes an append-only audit log of every decision. 
+Every AI agent action is scored on five risk dimensions, banded GREEN / YELLOW / ORANGE / RED, and resolved in 0.2 to 2.9 ms on a single CPU thread. No LLM in the decision path. No external service. No hyperscaler dependency. Apache 2.0. **Built in Vienna, Austria. Architecturally sovereign: no external services, no hyperscaler dependency, runs entirely on your own infrastructure.**
 
-- No LLM in the decision path. 
-- No external service. 
-- No hyperscaler dependency. 
-- Markov drift detection.
+### The two-stage gate
 
-Apache 2.0. **Built in Vienna, Austria.** Written for developers who need verifiable safety in their stack, under their law.
+Sequence-aware deterministic policy resolves the obvious GREEN and RED in microseconds. LLM-based scanners (LLM Guard, Lakera, Pangea) run 100 to 700 ms per check and are reserved for YELLOW and ORANGE escalation where semantic judgment actually earns its cost. In typical deployments, fivedrisk takes 90%+ of the action volume off the LLM-based scanners.
 
+```
+agent action
+    │
+    ▼
+[fivedrisk]  ← 0.2 to 2.9 ms, deterministic, audited
+    │
+    ├── GREEN  ─────────────► execute
+    ├── YELLOW ─► LLM scanner ──► execute / log / escalate  (100–700 ms only when needed)
+    ├── ORANGE ─► HITL ────────► approve / deny
+    └── RED    ─────────────► block, audit, alert
+```
+
+### What fivedrisk is
+
+A runtime action-governance layer for AI agents. Per-action 5D scoring, HITL escalation, append-only audit log, 16-state Markov SafetyDrift for compositional attacks, identity passthrough, NDJSON event stream for SIEM. Think OPA for AI agents.
+
+### What fivedrisk is not
+
+A general LLM guardrail suite. A semantic content scanner. A replacement for LLM Guard, Lakera, or Pangea. A replacement for best practices in AI governance (tool and scope narrowing, prompt guardrails, system prompts). It is the deterministic pre-filter that lets those scanners and practices scale.
+
+### Quickstart in 5 minutes
+
+```bash
+pip install fivedrisk
+python -c "import fivedrisk; print(fivedrisk.__version__)"
+```
+
+Full walkthrough including scope-narrowing guidance and per-deployment tuning: [`docs/quickstart.md`](../docs/quickstart.md). Copy-paste-runnable integrations: [`examples/`](../examples/). Policy presets for common deployment archetypes: [`fivedrisk/policies/presets/`](policies/presets/).
 
 ```python
 from fivedrisk.hooks import gate

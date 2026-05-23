@@ -113,10 +113,10 @@ class TestDecisionMemory:
     def test_project_scope_takes_priority(self, tmp_path):
         log = DecisionLog(tmp_path / "test.db")
         log.remember("Bash", "docker compose restart", "approved", "global", "GREEN")
-        log.remember("Bash", "docker compose restart", "denied", "project:dotos-seed", None)
+        log.remember("Bash", "docker compose restart", "denied", "project:fivedrisk", None)
         mem = log.check_memory(
             "Bash", "docker compose restart",
-            project_scope="project:dotos-seed",
+            project_scope="project:fivedrisk",
         )
         assert mem["decision"] == "denied"
 
@@ -133,7 +133,7 @@ class TestDecisionMemory:
     def test_list_memories(self, tmp_path):
         log = DecisionLog(tmp_path / "test.db")
         log.remember("Bash", "docker restart", "approved", "global")
-        log.remember("Edit", "vault file", "approved", "project:dotos")
+        log.remember("Edit", "vault file", "approved", "project:fivedrisk")
         all_mems = log.list_memories()
         assert len(all_mems) == 2
         global_mems = log.list_memories(scope="global")

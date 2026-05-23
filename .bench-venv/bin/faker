@@ -1,0 +1,8 @@
+#!/bin/sh
+'''exec' "/Users/langoni/Library/Mobile Documents/com~apple~CloudDocs/AI Lab/Claude Workbench/projects/fivedrisk-oss/dev/.bench-venv/bin/python3.11" "$0" "$@"
+' '''
+import sys
+from faker.cli import execute_from_command_line
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(execute_from_command_line())

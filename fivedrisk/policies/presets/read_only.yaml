@@ -1,0 +1,59 @@
+# fivedrisk preset — read_only
+#
+# For agents whose job is to retrieve and report. Reads are GREEN; anything
+# that writes, executes, or talks to an external system escalates fast.
+#
+# Use when: research assistants, knowledge-base lookups, support triage,
+# log analysis, "read this and summarize" pipelines.
+#
+# Schema mirrors dev/policy.yaml. Load with:
+#   from fivedrisk import load_policy
+#   policy = load_policy("path/to/read_only.yaml")
+
+version: "0.2.0"
+
+# Tight bands. The point of this preset is that writes feel painful.
+bands:
+  yellow_score: 0.8        # tighter than default 1.0
+  orange_score: 1.4        # tighter than default 1.8
+  red_score: 2.0           # tighter than default 2.5
+
+thresholds:
+  red_threshold: 3         # single dim >=3 trips RED (default 4)
+  orange_threshold: 2      # single dim >=2 trips ORANGE (default 3)
+
+# YELLOW is on so the audit trail can show "tried to write, got log-elevated".
+enable_yellow_band: true
+
+# Default weights are fine for this preset.
+
+# Override tool baselines so writes are surfaced even when nominally light.
+tool_defaults:
+  Read:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Glob:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Grep:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Edit:
+    tool_privilege: 3        # was 1; reads-only agents have no business editing
+    reversibility: 2
+    external_impact: 0
+  Write:
+    tool_privilege: 3
+    reversibility: 2
+    external_impact: 0
+  Bash:
+    tool_privilege: 3        # was 2; tighten
+    reversibility: 2
+    external_impact: 1
+  WebFetch:
+    tool_privilege: 1
+    reversibility: 0
+    external_impact: 2       # fetching is read-shaped but pings the outside world

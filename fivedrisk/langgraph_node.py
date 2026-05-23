@@ -1,10 +1,10 @@
 """5D Risk Governance Engine — LangGraph decision-gate node.
 
-Drops into DotOS's LangGraph state machine as a gate between
-the Builder's tool-call decision and actual execution.
+Drops into a LangGraph state machine as a gate between the planner /
+builder's tool-call decision and actual execution.
 
 Usage in graph.py:
-    from fivedrisk.langgraph_node import fivedrisk_gate_node
+    from fivedrisk.langgraph_node import fivedrisk_gate_node, route_by_band
 
     # Add as a node in the graph
     graph.add_node("fivedrisk_gate", fivedrisk_gate_node)
@@ -14,8 +14,13 @@ Usage in graph.py:
     graph.add_conditional_edges(
         "fivedrisk_gate",
         route_by_band,
-        {"go": "tool_executor", "ask": "hitl_review", "stop": "deny_response"}
+        {"green": "tool_executor",
+         "yellow": "tool_executor",   # YELLOW often log-elevates and continues
+         "orange": "hitl_review",
+         "red": "deny_response"},
     )
+
+See `dev/examples/langgraph_multi_step.py` for a runnable walkthrough.
 """
 
 from __future__ import annotations

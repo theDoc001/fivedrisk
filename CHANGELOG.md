@@ -5,6 +5,25 @@ All notable changes to **fivedrisk** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [0.5.2] — 2026-05-23
+
+Hygiene-and-DX release. Repositions fivedrisk as the deterministic pre-filter that runs BEFORE LLM-based guards, adds a five-preset policy library, ships three copy-paste-runnable examples, and lands a 5-minute quickstart. No public API or schema changes. Test count unchanged at 424 passing, 0 failing.
+
+### Added
+- **Policy presets** (`fivedrisk/policies/presets/`). Five YAML presets covering common deployment archetypes: `read_only.yaml`, `human_approval_required.yaml`, `financial_operations.yaml`, `customer_data.yaml`, `code_execution.yaml`. Load with `load_policy("path/to/preset.yaml")` or use as a starting point for your own policy. Each preset documents the threshold reasoning inline.
+- **Examples** (`examples/`). Two new runnable integrations: `minimal_gate.py` (smallest possible `@gate` wiring) and `langgraph_multi_step.py` (the `fivedrisk_gate_node` inside a LangGraph state machine, routing GREEN, YELLOW, ORANGE, RED to the right edges). An OpenAI Agents SDK integration example is queued for a later release once it has been validated end-to-end against the live SDK.
+- **Quickstart** (`docs/quickstart.md`). Under-100-line end-to-end walkthrough a developer can run in 5 minutes. Includes scope-narrowing guidance: narrow the agent's tool surface, narrow the autonomy context, and extend `policy.yaml` `tool_defaults` and `bash_overrides` to match your exact deployment.
+
+### Changed
+- **README opener rewritten.** Now leads with the two-stage architectural wedge: fast deterministic lane (fivedrisk, 0.2 to 2.9 ms per scenario) plus LLM-observer slow lane (LLM Guard, Lakera, Pangea, 100 to 700 ms per check). New section "What fivedrisk is not" explicitly disclaims general LLM guardrail framing, semantic content scanning, and replacement for AI governance best practices (tool and scope narrowing, prompt guardrails, system prompts).
+- **Sovereign-AI framing.** "Built in Vienna, Austria. Architecturally sovereign: no external services, no hyperscaler dependency, runs entirely on your own infrastructure." Replaces ambiguous regulatory-anchoring language with concrete architectural facts.
+
+### Notes
+- v0.5.1 was tagged locally on 2026-05-19 but never reached PyPI. The docs-only README changes from 0.5.1 are bundled into 0.5.2; no separate 0.5.1 publish.
+- CLAUDE.md quality rule #7 now mandates PyPI publish before every git tag push. The 0.5.1 gap is what motivated the rule.
+- Pre-commit lint extended. Two additional regex locks added covering commercial-brand seeding and premature deployment-maturity phrasing. Enforced on every staged diff.
+
+---
 ## [0.5.1] — 2026-05-19
 
 Docs-only release. No code, behavior, or test changes from v0.5.0.
