@@ -14,10 +14,13 @@ build/
 .env.*
 *.env
 
-# Virtual envs
+# Virtual envs — any name, no exceptions, all live at ~/.venvs/<name>/
+# (per feedback_venvs_outside_icloud memory)
 .venv/
 venv/
 env/
+*venv*/
+.*-venv/
 
 # IDE
 .idea/
@@ -38,22 +41,12 @@ env/
 * 2.*
 * 2
 
-# Pre-publish drafts (release deliberately with cosigner credit per master pitch §4.3)
-docs/
-
-cat >> .gitignore <<'EOF'
-
-# Any venv directory inside the repo (catch-all per feedback_venvs_outside_icloud)
-*venv*/
-.*-venv/
-
-# Calibration data lives in vault/testing/benchmarks/ until the v0.5.2
-# comparison report ships (task #52)
-benchmarks/aiid-reconstructions.yaml
-
-# Any venv directory inside the repo (catch-all per feedback_venvs_outside_icloud)
-*venv*/
-.*-venv/
+# Pre-publish drafts (release deliberately with cosigner credit per master pitch §4.3).
+# Use `docs/*` not `docs/` so negation patterns can re-include specific files
+# (git cannot un-ignore a file whose parent directory is fully excluded).
+docs/*
+# Exception: quickstart.md is public onboarding, not a draft.
+!docs/quickstart.md
 
 # Calibration data lives in vault/testing/benchmarks/ until the v0.5.2
 # comparison report ships (task #52)
