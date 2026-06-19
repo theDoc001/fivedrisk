@@ -15,7 +15,7 @@ Bands (§12.4):
 from __future__ import annotations
 
 from .policy import Policy
-from .schema import DIMENSION_NAMES, Action, Band, ModelClass, RoutingDecision, ScoredAction
+from .schema import DIM_MAX, DIMENSION_NAMES, Action, Band, ModelClass, RoutingDecision, ScoredAction
 
 
 # ─── Model routing table (§19.3) ───────────────────────────────
@@ -146,6 +146,11 @@ def _build_rationale(action: Action, band: Band, max_dim: int,
 def score(action: Action, policy: Policy | None = None) -> ScoredAction:
     """Score an Action against a Policy, returning a ScoredAction.
 
+    By default, YELLOW band collapses into GREEN (3-band experience). Enable
+    the 4-band experience by setting ``enable_yellow_band: true`` in
+    policy.yaml. The 4-band mode surfaces YELLOW as a stable audit-log label
+    for moderate-risk decisions without requiring HITL approval.
+
     Algorithm (4-band, aligned with governance spec v0.3 §12.3):
 
         1. Compute weighted composite:
@@ -164,7 +169,9 @@ def score(action: Action, policy: Policy | None = None) -> ScoredAction:
            YELLOW ≥ 1.0
            GREEN  < 1.0
 
-        5. Take the highest band from steps 3-4.
+        5. Take the highest band from steps 3-4. If the result is YELLOW
+           and ``policy.enable_yellow_band`` is False (the default), fold
+           YELLOW into GREEN so callers see a 3-band experience.
 
         6. Route model based on band + data class (§19.3).
 
@@ -231,6 +238,3 @@ def score(action: Action, policy: Policy | None = None) -> ScoredAction:
         policy_version=policy.version,
         routing=routing,
     )
-
-
-DIM_MAX = 4  # re-export for max_possible calc

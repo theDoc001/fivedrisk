@@ -3,17 +3,28 @@
 Implements governance spec v0.3 §19 (Model Routing Policy) with
 capability ceiling recognition and the Advisor Tool pattern.
 
-Routing chain:
-  phi-4-mini (M0) → task classification, fast routing
-  Qwen3:8b   (M1/M2) → planning, drafting, routine execution [LOCAL]
-  Sonnet+Advisor (M3) → Sonnet executor + Opus advisor [CLOUD]
-  Opus       (M4) → trusted control plane, Red-tier only [CLOUD]
+ModelClass to example-model mapping (abstraction, not a model name;
+operators map each class to whatever their stack supports):
+
+  ===========  ============================  =========================================================
+  ModelClass   Class description             Example models
+  ===========  ============================  =========================================================
+  M0           Embedding-only / classifier   OpenAI text-embedding-3, local SentenceTransformers
+  M1           Cheap-fast inference          Claude Haiku, GPT-5-mini, Gemini Flash, local 8B (Ollama)
+  M2           Balanced general use          Claude Sonnet, GPT-5, Gemini Pro
+  M3           Frontier reasoning            Claude Opus, GPT-5.5, Gemini Ultra
+  M4           Multi-model / ensemble        Operator-defined pipelines
+  ===========  ============================  =========================================================
+
+The DEFAULT_MODEL_CONFIGS below show one concrete mapping (local Ollama
+plus Anthropic cloud). Override via ``ModelRouter(configs=...)`` to
+match your own stack.
 
 Each agent recognizes its capability ceiling and escalates rather
 than guessing. The 5D score influences model routing: higher risk
-→ higher model floor.
+implies higher model floor.
 
-Cost × Risk coupling (§16):
+Cost x Risk coupling (§16):
   Rule A: Higher risk raises minimum model quality floor
   Rule B: Higher risk shrinks autonomy
   Rule C: Higher risk expands logging

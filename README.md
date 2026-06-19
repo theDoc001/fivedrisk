@@ -58,15 +58,17 @@ async def write_record(table: str, data: dict) -> None:
 
 ## What it does
 
-fivedrisk scores every AI agent action on **5 risk dimensions** (0–4 each):
+fivedrisk scores every AI agent action on **5 risk dimensions** (0–4 each).
 
-| Dimension | What it measures |
-|---|---|
-| **D** — Data Sensitivity | Public → PII → financial → credentials |
-| **T** — Tool Privilege | Read-only → write → admin → destructive |
-| **R** — Reversibility | Undoable → hard-to-undo → irreversible |
-| **E** — External Impact | Local → internal API → external → untrusted |
-| **A** — Autonomy Context | User-direct → agent-supervised → fully autonomous |
+**All 5 dimensions are scored 0 to 4. Higher value = more risk on every axis. There is no inverted axis.** If you find yourself assigning a HIGH score for something SAFE, you are mapping it backward.
+
+| Dimension | What it measures | 0 (low risk) | 4 (high risk) |
+|---|---|---|---|
+| **D** — Data Sensitivity | Sensitivity of data touched | public | credentials / secrets |
+| **T** — Tool Privilege | Power of the tool invoked | read-only | destructive |
+| **R** — Reversibility | How easy to undo | trivially undoable | irreversible |
+| **E** — External Impact | Blast radius of the action | local-only | untrusted external endpoint |
+| **A** — Autonomy Context | Distance from a human-in-the-loop | user-direct | fully autonomous, no human in loop |
 
 5D stays deterministic. Bands signal what fivedrisk wants your stack to do; your stack chooses the LLM and the workflow.
 
@@ -160,6 +162,68 @@ from fivedrisk.hooks import fivedrisk_pre_tool, fivedrisk_post_tool
 from fivedrisk.langgraph_node import fivedrisk_gate_node
 # Add fivedrisk_gate_node to your StateGraph before any tool-executing node
 ```
+
+---
+
+## Scoring custom (non-tool-call) actions
+
+`classify_tool_call` is convenient for agent tool calls (Bash, Read, Write, WebFetch, ...) where fivedrisk's classifier already has baselines. For events that are not agent tool calls (vault writes, ingest events, document processing, anything that can be characterized on 5 dimensions), construct an `Action` directly:
+
+```python
+from fivedrisk import Action, score, load_policy, Band
+
+# Construct Action directly with the 5 dimensions.
+# Higher values = more risk on every axis. Scale is 0-4.
+action = Action(
+    tool_name="vault_write",          # any free-form label
+    data_sensitivity=2,               # 0 = public, 4 = credentials / secrets
+    tool_privilege=2,                 # 0 = read-only, 4 = destructive
+    reversibility=3,                  # 0 = trivially undoable, 4 = irreversible
+    external_impact=0,                # 0 = local-only, 4 = untrusted external
+    autonomy_context=1,               # 0 = user-direct, 4 = fully autonomous
+    metadata={"event": "vault_write", "source": "speci"},
+)
+
+result = score(action, load_policy("policy.yaml"))
+print(result.band)        # Band.GREEN, YELLOW, ORANGE, or RED
+print(result.rationale)   # human-readable reason
+```
+
+The deterministic scoring engine works for any `Action` shape; tool-call classification is just one entry point. Document processing, RAG ingest, scheduled jobs, and any other action surface can be scored on the same five dimensions.
+
+---
+
+## Model classes (M0-M4)
+
+fivedrisk's `ModelClass` is an abstraction over capability, not a model name. Operators map each class to whatever model their stack supports.
+
+| ModelClass | Class description | Example models |
+|---|---|---|
+| M0 | Embedding-only / classifier | OpenAI text-embedding-3, local SentenceTransformers |
+| M1 | Cheap-fast inference | Claude Haiku, GPT-5-mini, Gemini Flash, local 8B (Ollama) |
+| M2 | Balanced general use | Claude Sonnet, GPT-5, Gemini Pro |
+| M3 | Frontier reasoning | Claude Opus, GPT-5.5, Gemini Ultra |
+| M4 | Multi-model / ensemble | Operator-defined pipelines |
+
+`ModelRouter` ships with one concrete default mapping (local Ollama plus Anthropic cloud) for convenience; pass your own `configs` dict to `ModelRouter(configs=...)` to align with your stack.
+
+---
+
+## Public API stability
+
+The following symbols are stable for the 0.x series. Breaking changes to these require a major version bump (0.x to 1.0):
+
+- `fivedrisk.score()`
+- `fivedrisk.classify_tool_call()`
+- `fivedrisk.Action`
+- `fivedrisk.ScoredAction`
+- `fivedrisk.Band`
+- `fivedrisk.Policy`
+- `fivedrisk.load_policy()`
+- `fivedrisk.DecisionLog`
+- `fivedrisk.hooks.gate`
+
+Everything else (internal modules, undocumented helpers, future modules added in patch versions) may change between minor versions. Pin to a specific patch version (e.g., `fivedrisk==0.5.3`) if you embed fivedrisk into a downstream project.
 
 ---
 

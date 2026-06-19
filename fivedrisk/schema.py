@@ -49,12 +49,26 @@ class Band(Enum):
 # ─── Model Classes (§19.2) ─────────────────────────────────────
 
 class ModelClass(Enum):
-    """Abstract model quality classes — not vendor-specific."""
-    M0 = "M0"  # Local utility: classification, parsing, routing (phi-4-mini)
-    M1 = "M1"  # Cost-efficient general: simple summarization, drafts (Qwen3:8b)
-    M2 = "M2"  # Balanced reasoning: planning, synthesis (Qwen3:8b /think)
-    M3 = "M3"  # Premium reasoning: complex planning, high-stakes (Sonnet+Advisor)
-    M4 = "M4"  # Trusted review path: Red/Orange control workflows (Opus direct)
+    """Abstract model quality classes, not vendor-specific.
+
+    Operators map M-class to whatever model their stack supports. The
+    class is an abstraction over capability, not a model name.
+
+    ===========  ============================  =========================================================
+    ModelClass   Class description             Example models
+    ===========  ============================  =========================================================
+    M0           Embedding-only / classifier   OpenAI text-embedding-3, local SentenceTransformers
+    M1           Cheap-fast inference          Claude Haiku, GPT-5-mini, Gemini Flash, local 8B (Ollama)
+    M2           Balanced general use          Claude Sonnet, GPT-5, Gemini Pro
+    M3           Frontier reasoning            Claude Opus, GPT-5.5, Gemini Ultra
+    M4           Multi-model / ensemble        Operator-defined pipelines
+    ===========  ============================  =========================================================
+    """
+    M0 = "M0"  # Embedding-only / classifier
+    M1 = "M1"  # Cheap-fast inference
+    M2 = "M2"  # Balanced general use
+    M3 = "M3"  # Frontier reasoning
+    M4 = "M4"  # Multi-model / ensemble
 
     def __str__(self) -> str:
         return self.value
@@ -90,6 +104,17 @@ class RoutingDecision:
 
 
 # ─── Dimensions ────────────────────────────────────────────────
+#
+# All 5 dimensions are scored 0 to 4. Higher value = more risk on every
+# axis. There is no inverted axis. If you find yourself assigning a HIGH
+# score for something SAFE, you are mapping it backward.
+#
+# Scale anchors:
+#   data_sensitivity   0 = public,             4 = credentials / secrets
+#   tool_privilege     0 = read-only,          4 = destructive
+#   reversibility      0 = trivially undoable, 4 = irreversible
+#   external_impact    0 = local-only,         4 = untrusted external endpoint
+#   autonomy_context   0 = user-direct,        4 = fully autonomous, no human in loop
 
 DIMENSION_NAMES = (
     "data_sensitivity",
@@ -236,19 +261,24 @@ class AutonomySignals:
 class Action:
     """An action about to be executed by an agent.
 
-    Each of the five dimensions is scored 0-4 per §12.2:
-        0 = no risk (e.g. read-only local file, public data)
-        4 = maximum risk (e.g. irreversible, PII, unattended, admin)
+    Each of the five dimensions is scored 0-4 per §12.2. Higher value =
+    more risk on every axis; there is no inverted axis.
+
+        data_sensitivity:  0 = public,             4 = credentials / secrets
+        tool_privilege:    0 = read-only,          4 = destructive
+        reversibility:     0 = trivially undoable, 4 = irreversible
+        external_impact:   0 = local-only,         4 = untrusted external
+        autonomy_context:  0 = user-direct,        4 = fully autonomous, no human in loop
     """
     tool_name: str
     tool_input: Dict[str, Any] = field(default_factory=dict)
 
-    # --- 5 Dimensions (0-4 each) ---
-    data_sensitivity: int = 0
-    tool_privilege: int = 0
-    reversibility: int = 0
-    external_impact: int = 0
-    autonomy_context: int = 0
+    # --- 5 Dimensions (0-4 each, higher = more risk on every axis) ---
+    data_sensitivity: int = 0     # 0 = public, 4 = credentials / secrets
+    tool_privilege: int = 0       # 0 = read-only, 4 = destructive
+    reversibility: int = 0        # 0 = trivially undoable, 4 = irreversible
+    external_impact: int = 0      # 0 = local-only, 4 = untrusted external endpoint
+    autonomy_context: int = 0     # 0 = user-direct, 4 = fully autonomous, no human in loop
 
     # --- Metadata ---
     source: str = "unknown"

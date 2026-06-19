@@ -43,7 +43,59 @@ for row in log.query_recent(limit=5):
     print(row["band"], row["tool_name"], row["rationale"])
 ```
 
-Every gated call writes a row. SQLite by default at `~/.fivedrisk/decisions.db`; override via `configure(log_path=...)`.
+Every gated call writes a row. SQLite by default at `fivedrisk_decisions.db`; override via `configure(log_path=...)` or pass a path to `DecisionLog(path)`.
+
+### Score + DecisionLog in one call
+
+If you are scoring actions outside the `@gate` decorator (e.g. custom events, batch ingest), pair `score()` directly with `DecisionLog.log()` to persist each decision:
+
+```python
+from fivedrisk import Action, score, load_policy
+from fivedrisk.logger import DecisionLog
+
+policy = load_policy("policy.yaml")
+log = DecisionLog("audit.db")    # SQLite file path
+
+action = Action(
+    tool_name="Bash",
+    data_sensitivity=1,
+    tool_privilege=3,
+    reversibility=4,
+    external_impact=2,
+    autonomy_context=2,
+)
+result = score(action, policy)
+log.log(result)                   # one call, decision persisted
+
+# Later: query the log
+for row in log.query_recent(limit=10):
+    print(f"{row['band']:6}  {row['tool_name']:10}  {row['rationale']}")
+```
+
+## 3b. Score a custom (non-tool-call) action
+
+`classify_tool_call` is the convenient entry point for agent tool calls. For events that are not agent tool calls (vault writes, ingest events, document processing, scheduled jobs), construct an `Action` directly:
+
+```python
+from fivedrisk import Action, score, load_policy, Band
+
+# Higher values = more risk on every axis. Scale is 0-4.
+action = Action(
+    tool_name="vault_write",          # any free-form label
+    data_sensitivity=2,               # 0 = public, 4 = credentials / secrets
+    tool_privilege=2,                 # 0 = read-only, 4 = destructive
+    reversibility=3,                  # 0 = trivially undoable, 4 = irreversible
+    external_impact=0,                # 0 = local-only, 4 = untrusted external
+    autonomy_context=1,               # 0 = user-direct, 4 = fully autonomous
+    metadata={"event": "vault_write", "source": "speci"},
+)
+
+result = score(action, load_policy("policy.yaml"))
+print(result.band)        # Band.GREEN, YELLOW, ORANGE, or RED
+print(result.rationale)   # human-readable reason
+```
+
+The deterministic scoring engine works for any `Action` shape; tool-call classification is just one entry point.
 
 ## 4. Pick a preset (or tune your own)
 

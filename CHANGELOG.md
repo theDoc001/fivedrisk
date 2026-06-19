@@ -5,6 +5,28 @@ All notable changes to **fivedrisk** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [0.5.3] (2026-06-15)
+
+DX patch release. Six small documentation and clarity fixes captured from the first external embed (Speci ingest scoring) plus the previously-landed `gateway.py` IPC module. No public API or schema changes. No behavior changes.
+
+### Added (DX)
+- **"Score a custom (non-tool-call) action" recipe** in `README.md` and `docs/quickstart.md`. Constructing an `Action` directly with the five dimensions is now documented for vault writes, ingest events, scheduled jobs, and any event that is not an agent tool call.
+- **Dimension scale + direction statement** at every definition site. `schema.py` module header, `Action` dataclass docstring, and the `README.md` Dimensions table now all carry the explicit anchor: scores run 0 to 4, higher = more risk on every axis, no inverted axis. Speci-style silent inversion (HIGH score for SAFE actions) is now flagged in plain text.
+- **M0 to M4 example-model mapping table** in `README.md`, `router.py` module docstring, and the `ModelClass` enum docstring. Includes example mappings for OpenAI, Anthropic, Google, and local-model deployments. The class is an abstraction over capability, not a model name.
+- **`score()` + `DecisionLog` one-call quickstart** in `docs/quickstart.md`. Pairs `score()` with `DecisionLog.log()` for callers scoring outside the `@gate` decorator.
+- **Public API stability section** in `README.md`. Names the nine stable public symbols (`score`, `classify_tool_call`, `Action`, `ScoredAction`, `Band`, `Policy`, `load_policy`, `DecisionLog`, `hooks.gate`); breaking changes to these require a major version bump.
+- **`fivedrisk.gateway` IPC module** (`python -m fivedrisk.gateway stdio|score|resolve`). Persistent stdio and one-shot subprocess modes that let non-Python plugins (OpenClaw, Node, Go, Rust) call the scoring engine over JSON-lines. See `gateway.py` module docstring for the request/response shape.
+
+### Changed (DX)
+- **`score()` docstring** in `scorer.py` now explicitly documents the YELLOW-fold behavior: by default YELLOW collapses into GREEN (3-band experience); set `enable_yellow_band: true` in `policy.yaml` for the 4-band audit-log experience. Previously documented only as an inline code comment.
+- **Duplicate `DIM_MAX` constant** removed from `scorer.py`. The canonical definition lives in `schema.py`; `scorer.py` now imports it. Tightens the schema dependency and removes a code smell.
+
+### Notes
+- Test count: 444 passing, 0 failing (unchanged across the DX patch).
+- No PyPI long_description action needed; pulls from `fivedrisk/README.md` on twine upload.
+- Downstream consumers embedding fivedrisk are recommended to pin a specific patch version (`fivedrisk==0.5.3`) until they have tested against the next release. The Public API stability section names which symbols are safe across patch versions.
+
+---
 ## [0.5.2] — 2026-05-23
 
 Hygiene-and-DX release. Repositions fivedrisk as the deterministic pre-filter that runs BEFORE LLM-based guards, adds a five-preset policy library, ships three copy-paste-runnable examples, and lands a 5-minute quickstart. No public API or schema changes. Test count unchanged at 424 passing, 0 failing.
