@@ -1,0 +1,113 @@
+# fivedrisk preset — code_execution
+#
+# For agents that run arbitrary code (Bash, shell pipelines, containerised
+# scripts, package installs, infra commands). Optimised for the failure
+# mode: irreversible destructive commands disguised by quoting, encoding,
+# or chained operators.
+#
+# Layer this preset with fivedrisk's injection scanner
+# (`scan_input_for_injection`) before passing user goals into a tool-using
+# agent: the L1 regex layer catches the obvious bad shapes before scoring
+# even runs.
+
+version: "0.2.0"
+
+bands:
+  yellow_score: 0.9
+  orange_score: 1.5
+  red_score: 2.2
+
+thresholds:
+  red_threshold: 4
+  orange_threshold: 3
+
+enable_yellow_band: true
+
+# Tool-privilege and reversibility carry more weight; destructive
+# code-execution actions are usually flagged by spikes on those axes.
+weights:
+  data_sensitivity: 1.0
+  tool_privilege: 1.4      # was 1.0
+  reversibility: 1.8       # was 1.5
+  external_impact: 1.0     # was 0.8
+  autonomy_context: 0.8
+
+tool_defaults:
+  Read:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Edit:
+    tool_privilege: 2
+    reversibility: 2
+    external_impact: 0
+  Write:
+    tool_privilege: 2
+    reversibility: 2
+    external_impact: 0
+  Bash:
+    tool_privilege: 3        # was 2
+    reversibility: 3
+    external_impact: 2
+  WebFetch:
+    tool_privilege: 2
+    reversibility: 1
+    external_impact: 2
+
+# Tightened bash overrides covering the common-but-dangerous shapes.
+# Extend with your team's own tooling (kubectl, terraform, helm, ansible).
+bash_overrides:
+  "rm -rf":
+    tool_privilege: 4
+    reversibility: 4
+  "git push --force":
+    tool_privilege: 3
+    reversibility: 4
+  "docker":
+    tool_privilege: 3
+    reversibility: 2
+  "pip install":
+    tool_privilege: 2
+    reversibility: 1
+  "npm install":
+    tool_privilege: 2
+    reversibility: 1
+  "curl.*POST":
+    tool_privilege: 2
+    external_impact: 3
+  "curl.*PUT":
+    tool_privilege: 2
+    external_impact: 3
+  "wget":
+    tool_privilege: 2
+    external_impact: 2
+  "sudo":
+    tool_privilege: 4
+    reversibility: 3
+  "chmod":
+    tool_privilege: 2
+    reversibility: 2
+  "chown":
+    tool_privilege: 2
+    reversibility: 2
+  "kubectl apply":
+    tool_privilege: 3
+    reversibility: 3
+  "kubectl delete":
+    tool_privilege: 4
+    reversibility: 4
+  "terraform apply":
+    tool_privilege: 3
+    reversibility: 3
+  "terraform destroy":
+    tool_privilege: 4
+    reversibility: 4
+  "dd if=":
+    tool_privilege: 4
+    reversibility: 4
+  "mkfs":
+    tool_privilege: 4
+    reversibility: 4
+  ">/dev/sda":
+    tool_privilege: 4
+    reversibility: 4

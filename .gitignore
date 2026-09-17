@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Env
+.env
+.env.*
+*.env
+
+# Virtual envs — any name, no exceptions, all live at ~/.venvs/<name>/
+.venv/
+venv/
+env/
+*venv*/
+.*-venv/
+
+# Local agent and editor configuration. Machine-specific absolute paths.
+# Never committed. Added 2026-07-26.
+.claude/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Local dev
+*.log
+BUG_TRACKING.md
+# Local-only working notes / private scratch (never ships to the public repo)
+systems/
+private/
+RELEASE_NOTES.md
+
+# Runtime artifacts (decision logs, benchmark DBs, backups)
+*.db
+*.db-journal
+*.db.*
+*.bak
+
+# iCloud sync duplicates
+* 2.*
+* 2
+
+# Pre-publish drafts (release deliberately with cosigner credit per master pitch §4.3).
+# Use `docs/*` not `docs/` so negation patterns can re-include specific files
+# (git cannot un-ignore a file whose parent directory is fully excluded).
+docs/*
+# Exception: quickstart.md is public onboarding, not a draft.
+!docs/quickstart.md
+# Exception: the audit-trail page documents verify_chain and the six audit columns, which
+# shipped in 0.7.0 and were documented nowhere a user looks. Re-included BY NAME: widening
+# this to docs/** is how a private draft gets published, and leaving it out is how a README
+# link 404s, which has already happened twice.
+!docs/audit-trail.md
+# Exception: FOUR spec docs ship, each re-included by name below. The rest of
+# docs/spec/ (private governance/schema drafts) stays private — do NOT broaden
+# this to docs/spec/** or those private drafts would be published.
+!docs/spec/
+docs/spec/*
+# 2026-09-12: scope.md was authored 2026-07-12 as the canonical public answer to "what
+# fivedrisk assesses and what it deliberately does not", README.md:36 has linked it ever
+# since, and `docs/spec/*` above silently swallowed it, so that link has 404'd for every
+# reader. Re-included by name, never by widening the glob.
+!docs/spec/scope.md
+!docs/spec/taxonomy.md
+!docs/spec/deployment.md
+
+# Calibration data stays private until the corresponding comparison report ships
+benchmarks/aiid-reconstructions.yaml

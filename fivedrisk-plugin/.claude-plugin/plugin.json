@@ -1,0 +1,11 @@
+{
+  "name": "fivedrisk",
+  "description": "5D Risk Governance Engine for Claude Code. A deterministic policy gate: a PreToolUse hook scores every tool call on 5 dimensions (Data, Tool, Reversibility, External, Autonomy), bands it GREEN/YELLOW/ORANGE/RED, and enforces the verdict — GREEN/YELLOW execute, ORANGE blocks pending approval (exit 2), RED is denied. A PostToolUse hook scans tool output for leakage/injection-echo. Every decision is logged to a local SQLite audit trail. No LLM in the decision path; policy is configurable via policy.yaml.",
+  "version": "0.5.3",
+  "author": {
+    "name": "Loren",
+    "url": "https://langoni.me"
+  },
+  "homepage": "https://github.com/theDoc001/fivedrisk",
+  "license": "Apache-2.0"
+}

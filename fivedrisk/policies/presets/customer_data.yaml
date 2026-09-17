@@ -1,0 +1,76 @@
+# fivedrisk preset — customer_data
+#
+# For agents that handle PII, customer records, support tickets, CRM data.
+# Data sensitivity is the heaviest dimension here: reading PII at scale is
+# itself a risk surface, and any external transmission of PII is a hard
+# escalation.
+#
+# Pair this preset with fivedrisk's output-leakage scanner
+# (`scan_output_for_leakage`) and a destination allowlist.
+
+version: "0.2.0"
+
+bands:
+  yellow_score: 0.8
+  orange_score: 1.4
+  red_score: 2.0
+
+thresholds:
+  red_threshold: 3
+  orange_threshold: 2
+
+enable_yellow_band: true
+
+# Heavy data-sensitivity weight: a D=3 (financial PII) plus any external
+# impact is enough to land in ORANGE.
+weights:
+  data_sensitivity: 1.8    # was 1.2
+  tool_privilege: 1.0
+  reversibility: 1.5
+  external_impact: 1.4     # was 0.8 — PII to external is the worst case
+  autonomy_context: 0.8
+
+# Identity admission is on. Audit trail needs the principal for PII work.
+identity_required: true
+
+tool_defaults:
+  Read:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Glob:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Grep:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Edit:
+    tool_privilege: 2
+    reversibility: 2
+    external_impact: 0
+  Write:
+    tool_privilege: 2
+    reversibility: 2
+    external_impact: 0
+  Bash:
+    tool_privilege: 3
+    reversibility: 2
+    external_impact: 1
+  WebFetch:
+    tool_privilege: 2
+    reversibility: 0
+    external_impact: 3     # external transmission of PII is the failure mode
+  WebSearch:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 1
+
+# Reminder: enable the destination policy in your `configure()` call to
+# allowlist your internal CRM / data warehouse and block everything else.
+#   configure(
+#       policy_path="path/to/customer_data.yaml",
+#       enforce_destination_policy=True,
+#       destination_allowlist=["crm.internal", "warehouse.internal"],
+#   )

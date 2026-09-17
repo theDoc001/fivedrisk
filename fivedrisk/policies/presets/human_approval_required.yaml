@@ -1,0 +1,75 @@
+# fivedrisk preset — human_approval_required
+#
+# For agents where every action with side effects needs a human in the loop.
+# Reads stay GREEN; anything that writes, executes, or talks externally
+# escalates to ORANGE (HITL approval).
+#
+# Use when: assisted-coding agents on shared codebases, content-publishing
+# agents, deployment automation with manual gates, regulated workflows
+# where human sign-off is a hard requirement.
+
+version: "0.2.0"
+
+bands:
+  yellow_score: 1.0
+  orange_score: 1.4        # tighter than default 1.8 so writes hit ORANGE
+  red_score: 2.5
+
+thresholds:
+  red_threshold: 4
+  orange_threshold: 2      # tighter than default 3
+
+# YELLOW on for audit-trail clarity in regulated workflows.
+enable_yellow_band: true
+
+# Default weights are fine; reversibility is already the heaviest.
+
+# Push every write into ORANGE territory.
+tool_defaults:
+  Read:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Glob:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Grep:
+    tool_privilege: 0
+    reversibility: 0
+    external_impact: 0
+  Edit:
+    tool_privilege: 2
+    reversibility: 2
+    external_impact: 0
+  Write:
+    tool_privilege: 2
+    reversibility: 2
+    external_impact: 0
+  Bash:
+    tool_privilege: 3
+    reversibility: 3
+    external_impact: 1
+  WebFetch:
+    tool_privilege: 2
+    reversibility: 0
+    external_impact: 2
+
+# Bash overrides. The defaults already trip RED on rm -rf and force-push;
+# add network mutation as ORANGE-or-above.
+bash_overrides:
+  "rm -rf":
+    tool_privilege: 4
+    reversibility: 4
+  "git push --force":
+    tool_privilege: 3
+    reversibility: 4
+  "kubectl apply":
+    tool_privilege: 3
+    reversibility: 3
+  "terraform apply":
+    tool_privilege: 3
+    reversibility: 3
+  "terraform destroy":
+    tool_privilege: 4
+    reversibility: 4

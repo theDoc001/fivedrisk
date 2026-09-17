@@ -1,0 +1,438 @@
+"""5D Risk Governance Engine — Core schema definitions.
+
+Action, Band, ScoredAction, HITLCard, ModelClass dataclasses that
+form the backbone of every scoring, routing, and intervention operation.
+
+Per the 5D governance model.
+4-band system: Green / Yellow / Orange / Red.
+Model classes: M0-M4.
+
+Authored by Loren, March 2026. Apache-2.0 license.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum, IntEnum
+from typing import Any, Dict, List, Optional
+
+
+# ─── Risk Bands (§12.4) ────────────────────────────────────────
+
+class Band(Enum):
+    """Risk band — 4-tier gate decision per governance spec v0.3 §12.4."""
+    GREEN = "GREEN"    # Low-risk: execute, normal logging
+    YELLOW = "YELLOW"  # Moderate: execute with enhanced logging + conditional approval
+    ORANGE = "ORANGE"  # High: mandatory approval, stronger model, narrower tools
+    RED = "RED"        # Critical: hard gate, dual control or deny
+
+    def __str__(self) -> str:
+        return self.value
+
+    @property
+    def requires_approval(self) -> bool:
+        return self in (Band.ORANGE, Band.RED)
+
+    @property
+    def requires_enhanced_logging(self) -> bool:
+        return self in (Band.YELLOW, Band.ORANGE, Band.RED)
+
+    @property
+    def is_denied(self) -> bool:
+        return self == Band.RED
+
+
+# ─── Model Classes (§19.2) ─────────────────────────────────────
+
+class ModelClass(Enum):
+    """Abstract model quality classes, not vendor-specific.
+
+    Operators map M-class to whatever model their stack supports. The
+    class is an abstraction over capability, not a model name.
+
+    ===========  ============================  =========================================================
+    ModelClass   Class description             Example models
+    ===========  ============================  =========================================================
+    M0           Embedding-only / classifier   OpenAI text-embedding-3, local SentenceTransformers
+    M1           Cheap-fast inference          Claude Haiku, GPT-5-mini, Gemini Flash, local 8B (Ollama)
+    M2           Balanced general use          Claude Sonnet, GPT-5, Gemini Pro
+    M3           Frontier reasoning            Claude Opus, GPT-5.5, Gemini Ultra
+    M4           Multi-model / ensemble        Operator-defined pipelines
+    ===========  ============================  =========================================================
+    """
+    M0 = "M0"  # Embedding-only / classifier
+    M1 = "M1"  # Cheap-fast inference
+    M2 = "M2"  # Balanced general use
+    M3 = "M3"  # Frontier reasoning
+    M4 = "M4"  # Multi-model / ensemble
+
+    def __str__(self) -> str:
+        return self.value
+
+
+# ─── Model Routing Decision (§19.6) ────────────────────────────
+
+@dataclass
+class RoutingDecision:
+    """Per-action model routing decision per governance spec v0.3 §19.6."""
+    data_class: str                    # D0-D3
+    risk_band: Band
+    task_class: str                    # research, planning, drafting, execution, review
+    model_floor: ModelClass            # minimum model quality allowed
+    selected_model: ModelClass         # actual model selected
+    downgrade_allowed: bool = True
+    approval_required: bool = False
+    verification_level: str = "standard"  # standard | enhanced | full_provenance
+    reason: str = ""                   # why this routing was chosen
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "data_class": self.data_class,
+            "risk_band": str(self.risk_band),
+            "task_class": self.task_class,
+            "model_floor": str(self.model_floor),
+            "selected_model": str(self.selected_model),
+            "downgrade_allowed": self.downgrade_allowed,
+            "approval_required": self.approval_required,
+            "verification_level": self.verification_level,
+            "reason": self.reason,
+        }
+
+
+# ─── Dimensions ────────────────────────────────────────────────
+#
+# All 5 dimensions are scored 0 to 4. Higher value = more risk on every
+# axis. There is no inverted axis. If you find yourself assigning a HIGH
+# score for something SAFE, you are mapping it backward.
+#
+# Scale anchors:
+#   data_sensitivity   0 = public,             4 = credentials / secrets
+#   tool_privilege     0 = read-only,          4 = destructive
+#   reversibility      0 = trivially undoable, 4 = irreversible
+#   external_impact    0 = local-only,         4 = untrusted external endpoint
+#   autonomy_context   0 = user-direct,        4 = fully autonomous, no human in loop
+
+DIMENSION_NAMES = (
+    "data_sensitivity",
+    "tool_privilege",
+    "reversibility",
+    "external_impact",
+    "autonomy_context",
+)
+
+DIM_MIN = 0
+DIM_MAX = 4
+
+
+# ─── Acting Identity (OSS-PASS-THROUGH-IDENTITY-001) ─────────
+
+class PrincipalType(Enum):
+    """Type of principal an action is being taken on behalf of."""
+    USER = "USER"            # end-user invoking the agent
+    SERVICE = "SERVICE"      # service account / machine-to-machine
+    ROLE = "ROLE"            # role-assumed credentials (e.g. IAM role)
+    AGENT = "AGENT"          # another agent
+    ANONYMOUS = "ANONYMOUS"  # no principal asserted
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class AttestationSource(Enum):
+    """Where the identity claim came from.
+
+    Indicates the surface that asserted the identity. fivedrisk does not
+    verify or cryptographically validate the claim at this layer.
+    Verification surfaces (SPIFFE/SPIRE integration, JWT signature check,
+    X.509 chain validation) are on the project roadmap.
+    """
+    HTTP_HEADER = "HTTP_HEADER"        # e.g. X-User-Id, Authorization
+    JWT_CLAIM = "JWT_CLAIM"            # parsed from a JWT
+    ENV_VAR = "ENV_VAR"                # from an environment variable
+    AGENT_DECLARED = "AGENT_DECLARED"  # the agent itself declared the identity
+    NONE = "NONE"                      # no attestation source
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass
+class ActingIdentity:
+    """The principal an action is being taken on behalf of.
+
+    This is the AAA-style identity (who authorized this action). It is
+    distinct from `Action.metadata["agent_identity"]` which captures the
+    AGENT'S OWN workload identity (e.g. SPIFFE SVID URI). Both can be set
+    simultaneously: the agent has a SPIFFE identity AND is acting on
+    behalf of a user/role.
+
+    This is a pass-through capture: the fields flow through to the audit
+    log and NDJSON events unchanged. Identity-aware policy evaluation
+    beyond the `identity_required` admission check is on the project
+    roadmap.
+    """
+
+    principal_id: str
+    principal_type: PrincipalType = PrincipalType.ANONYMOUS
+    attestation_source: AttestationSource = AttestationSource.NONE
+    roles: Optional[List[str]] = None        # optional role list
+    data_scope: Optional[List[str]] = None   # optional data scope (e.g. tenant ids)
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "principal_id": self.principal_id,
+            "principal_type": str(self.principal_type),
+            "attestation_source": str(self.attestation_source),
+        }
+        if self.roles:
+            d["roles"] = list(self.roles)
+        if self.data_scope:
+            d["data_scope"] = list(self.data_scope)
+        return d
+
+    @classmethod
+    def anonymous(cls) -> "ActingIdentity":
+        """The default ANONYMOUS identity for callers that supply nothing."""
+        return cls(
+            principal_id="anonymous",
+            principal_type=PrincipalType.ANONYMOUS,
+            attestation_source=AttestationSource.NONE,
+        )
+
+
+# ─── Autonomy signals ─────────────────────────────────────────
+
+@dataclass
+class AutonomySignals:
+    """Optional signals the classifier uses to derive autonomy_context.
+
+    Hybrid model (per design 2026-05-10):
+      - Callers can pass `autonomy_context` to `classify_tool_call` as an
+        int directly (current API, override path).
+      - Callers can pass `autonomy_signals` instead, and the classifier
+        will derive an autonomy_context value from the signals.
+      - When both are present, the explicit int wins.
+
+    All fields optional. Missing signals score conservatively (toward 0,
+    interactive). Each signal can bump up; the classifier caps at 4.
+    """
+
+    seconds_since_user_message: Optional[float] = None  # higher = more autonomous
+    retry_count: int = 0                                # higher = agent iterating without human
+    plan_depth: int = 0                                 # higher = deeper in plan chain
+    prior_hitl_approved: bool = False                   # human-vetted earlier in session
+    unattended: bool = False                            # explicit unattended-mode marker
+
+    def derive_autonomy_context(self) -> int:
+        """Derive an autonomy_context value (0-4) from the signals.
+
+        Conservative scoring: missing signals do not bump. Most signals
+        contribute +1; `unattended` contributes +2 (the strongest single
+        signal — see bump rules below). Capped at 4.
+
+        Bump rules:
+          - seconds_since_user_message >= 300 (5 min): +1
+          - retry_count >= 3: +1
+          - plan_depth >= 3: +1
+          - unattended is True: +2 (the strongest single signal)
+          - prior_hitl_approved is True: clamp result at 2 (HITL has vetted
+            this session; treat as "supervised" regardless of other signals)
+        """
+        score = 0
+        if self.seconds_since_user_message is not None and self.seconds_since_user_message >= 300:
+            score += 1
+        if self.retry_count >= 3:
+            score += 1
+        if self.plan_depth >= 3:
+            score += 1
+        if self.unattended:
+            score += 2
+        if self.prior_hitl_approved:
+            score = min(score, 2)
+        return max(0, min(4, score))
+
+
+# ─── Action ────────────────────────────────────────────────────
+
+@dataclass
+class Action:
+    """An action about to be executed by an agent.
+
+    Each of the five dimensions is scored 0-4 per §12.2. Higher value =
+    more risk on every axis; there is no inverted axis.
+
+        data_sensitivity:  0 = public,             4 = credentials / secrets
+        tool_privilege:    0 = read-only,          4 = destructive
+        reversibility:     0 = trivially undoable, 4 = irreversible
+        external_impact:   0 = local-only,         4 = untrusted external
+        autonomy_context:  0 = user-direct,        4 = fully autonomous, no human in loop
+    """
+    tool_name: str
+    tool_input: Dict[str, Any] = field(default_factory=dict)
+
+    # --- 5 Dimensions (0-4 each, higher = more risk on every axis) ---
+    data_sensitivity: int = 0     # 0 = public, 4 = credentials / secrets
+    tool_privilege: int = 0       # 0 = read-only, 4 = destructive
+    reversibility: int = 0        # 0 = trivially undoable, 4 = irreversible
+    external_impact: int = 0      # 0 = local-only, 4 = untrusted external endpoint
+    autonomy_context: int = 0     # 0 = user-direct, 4 = fully autonomous, no human in loop
+
+    # --- Metadata ---
+    source: str = "unknown"
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # --- Acting Identity (OSS-PASS-THROUGH-IDENTITY-001) ---
+    # Optional pass-through capture of the principal on whose behalf this
+    # action is being taken. Distinct from metadata["agent_identity"]
+    # (the agent's own workload identity).
+    acting_identity: Optional["ActingIdentity"] = None
+
+    def __post_init__(self) -> None:
+        for dim_name in DIMENSION_NAMES:
+            val = getattr(self, dim_name)
+            if not isinstance(val, int) or not (DIM_MIN <= val <= DIM_MAX):
+                raise ValueError(
+                    f"{dim_name} must be int in [{DIM_MIN}, {DIM_MAX}], got {val!r}"
+                )
+
+    @property
+    def dimensions(self) -> tuple[int, ...]:
+        return tuple(getattr(self, name) for name in DIMENSION_NAMES)
+
+    @property
+    def max_dimension(self) -> int:
+        return max(self.dimensions)
+
+    @property
+    def tool_input_hash(self) -> str:
+        raw = json.dumps(self.tool_input, sort_keys=True, default=str)
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+    @property
+    def data_class(self) -> str:
+        """Map data_sensitivity to governance spec data classes D0-D3."""
+        return f"D{min(self.data_sensitivity, 3)}"
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "tool_name": self.tool_name,
+            "tool_input_hash": self.tool_input_hash,
+            **{name: getattr(self, name) for name in DIMENSION_NAMES},
+            "data_class": self.data_class,
+            "source": self.source,
+            "timestamp": self.timestamp.isoformat(),
+            "metadata": self.metadata,
+        }
+        if self.acting_identity is not None:
+            d["acting_identity"] = self.acting_identity.to_dict()
+        return d
+
+
+# ─── Scored Action ─────────────────────────────────────────────
+
+@dataclass
+class ScoredAction:
+    """Result of scoring an Action through a Policy.
+
+    ``fired_rule_id`` / ``floor_band`` are the STRUCTURED attribution of a policy
+    floor hit. Before they existed the only record of *which* rule raised a band was
+    prose appended to ``rationale`` (``scorer.py``: ``"… [<reason>]"``), which is
+    readable by a human and useless to a query — a reviewer asking "show me the rule,
+    not the verdict" had to parse free text, and a rule with no ``reason`` text
+    degraded to the bare string ``"floor:RED"``.
+
+    They are two fields rather than one because :class:`~fivedrisk.policy.FloorRule`
+    ``id`` defaults to ``""``: an unnamed floor rule would be indistinguishable from
+    no floor at all if attribution were carried by id alone. ``floor_band`` answers
+    "did a floor fire, and at what band"; ``fired_rule_id`` answers "which one".
+    """
+    action: Action
+    band: Band
+    composite_score: float
+    max_dimension: int
+    rationale: str
+    policy_version: str
+    routing: Optional[RoutingDecision] = None
+    session_id: Optional[str] = None
+    retry_count: int = 0
+    # --- Floor attribution (OSS-FIRED-RULE-ID-001) ---
+    # Both None when no policy floor matched. `fired_rule_id` is additionally None
+    # when the matched rule carries no `id`; `floor_band` is set whenever a floor
+    # matched, so "a floor fired" is never inferred from an empty id.
+    fired_rule_id: Optional[str] = None
+    floor_band: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = {
+            **self.action.to_dict(),
+            "band": str(self.band),
+            "composite_score": round(self.composite_score, 3),
+            "max_dimension": self.max_dimension,
+            "rationale": self.rationale,
+            "policy_version": self.policy_version,
+            "session_id": self.session_id,
+            "retry_count": self.retry_count,
+        }
+        if self.routing:
+            d["routing"] = self.routing.to_dict()
+        # Omitted (not emitted as null) when no floor fired, so an action that
+        # matches no floor serialises byte-identically to before this field existed.
+        if self.floor_band is not None:
+            d["floor_band"] = self.floor_band
+        if self.fired_rule_id is not None:
+            d["fired_rule_id"] = self.fired_rule_id
+        return d
+
+
+# ─── HITL Card (§15.4) ─────────────────────────────────────────
+
+@dataclass
+class HITLCard:
+    """Human-in-the-loop intervention card per governance spec v0.3 §15.4.
+
+    Rendered as a Discord embed. Progressive disclosure:
+    - Default: summary + recommendation + actions
+    - Expanded: full 5D score, chain-of-thought, prior decisions
+    - Memory: "Remember for this project" / "Remember for all projects"
+    """
+    card_type: str                     # planner-clarification | 5d-risk-gate |
+                                       # builder-error | retry-exhausted | model-escalation
+    summary: str                       # one sentence: what happened
+    why_it_matters: str                # one sentence: why this needs attention
+    band: Band
+    cost_impact: Optional[str] = None  # estimated cost of proceeding
+    recommendation: str = ""           # default action suggestion
+    actions: List[str] = field(default_factory=lambda: ["approve", "deny"])
+    scored_action: Optional[ScoredAction] = None
+    retry_history: List[Dict[str, Any]] = field(default_factory=list)
+    prior_decisions: List[Dict[str, Any]] = field(default_factory=list)
+
+    # Memory fields — set when user responds
+    remember_scope: Optional[str] = None  # None | "project:<name>" | "global"
+    remember_pattern: Optional[str] = None  # normalized tool+input pattern for matching
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = {
+            "card_type": self.card_type,
+            "summary": self.summary,
+            "why_it_matters": self.why_it_matters,
+            "band": str(self.band),
+            "recommendation": self.recommendation,
+            "actions": self.actions,
+        }
+        if self.cost_impact:
+            d["cost_impact"] = self.cost_impact
+        if self.scored_action:
+            d["scored_action"] = self.scored_action.to_dict()
+        if self.retry_history:
+            d["retry_history"] = self.retry_history
+        if self.prior_decisions:
+            d["prior_decisions"] = self.prior_decisions
+        if self.remember_scope:
+            d["remember_scope"] = self.remember_scope
+            d["remember_pattern"] = self.remember_pattern
+        return d

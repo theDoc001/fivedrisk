@@ -1,0 +1,40 @@
+{
+  "name": "fivedrisk-gateway",
+  "version": "0.6.0",
+  "description": "TypeScript client for the fivedrisk 5D risk-governance gateway — gate any JS/TS agent (Vercel AI SDK, Genkit) through the deterministic 5D engine.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test dist/*.test.js"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "guardrails",
+    "security",
+    "vercel-ai-sdk",
+    "genkit",
+    "fivedrisk"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,31 @@
+# fivedrisk — PINNED TEST ENVIRONMENT.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# A red count is a claim about an environment, and this repo's environment was
+# written down nowhere. A test run that cannot be reproduced tomorrow is not a
+# measurement, and a venv that drifts silently is how that happens: one undeclared
+# dependency is enough to turn a green suite into a long afternoon.
+#
+# This file is that environment.
+#
+# THIS IS NOT WHAT THE LIBRARY REQUIRES OF ITS USERS
+# --------------------------------------------------
+# Runtime requirements live in `pyproject.toml` and stay LOOSE on purpose. Hard-pinning
+# a published library's dependencies exports our choices to every downstream install
+# and breaks anyone who needs a different version. Do not move these into pyproject.
+#
+# WHAT IS AND IS NOT HERE
+# -----------------------
+# The test suite imports exactly two third-party names: `pytest` and `yaml`. Everything
+# else in the working venv (langgraph, twine, keyring, build, httpx) is either an
+# optional extra or publishing tooling, and neither belongs in a test pin.
+#
+# VERIFIED before this file was written: the set below reproduced a full green run.
+#
+#   ./.venv/bin/python -m pip install -r requirements-dev.txt
+#   PYTHONPATH=. ./.venv/bin/python -m pytest fivedrisk/tests -q -p no:randomly
+
+pytest==9.0.3
+pytest-asyncio==1.3.0     # installed in the reference venv; async adapter paths
+PyYAML==6.0.3             # also a runtime dep, declared LOOSELY in pyproject (correct)
