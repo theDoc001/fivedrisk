@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import os
+import subprocess
 import sys
+import tarfile
+import time
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,3 +66,86 @@ def test_release_archive_contains_only_the_tracked_plugin_tree(tmp_path: Path):
     assert "fivedrisk-plugin/.claude-plugin/plugin.json" in names
     assert "fivedrisk-plugin/skills/fivedrisk-setup/SKILL.md" in names
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(("git", "-C", str(repo), *args), check=True, capture_output=True)
+
+
+def _minimal_plugin_repo(tmp_path: Path) -> tuple[Path, Path]:
+    repo = tmp_path / "repo"
+    source = repo / "fivedrisk-plugin"
+    (source / ".codex-plugin").mkdir(parents=True)
+    (source / ".claude-plugin").mkdir()
+    (source / "skills" / "fivedrisk-setup").mkdir(parents=True)
+    (source / "scripts").mkdir()
+    for path in (
+        source / "plugin.json",
+        source / ".codex-plugin" / "plugin.json",
+        source / ".claude-plugin" / "plugin.json",
+    ):
+        path.write_text("{}\n", encoding="utf-8")
+    (source / "skills" / "fivedrisk-setup" / "SKILL.md").write_text(
+        "# setup\n", encoding="utf-8"
+    )
+    executable = source / "scripts" / "run"
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    executable.chmod(0o755)
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.name", "archive test")
+    _git(repo, "config", "user.email", "archive@example.invalid")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "candidate")
+    return repo, source
+
+
+def test_git_archive_is_reproducible_tracked_only_and_cwd_independent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _repo, source = _minimal_plugin_repo(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+    first = tmp_path / "first.zip"
+    second = tmp_path / "second.zip"
+    build_plugin_archive.build_from_git(source, first, "HEAD")
+    (source / "plugin.json").write_text('{"uncommitted": true}\n', encoding="utf-8")
+    (source / "untracked-secret.txt").write_text("not shipped\n", encoding="utf-8")
+    time.sleep(2.1)
+    build_plugin_archive.build_from_git(source, second, "HEAD")
+    assert first.read_bytes() == second.read_bytes()
+    with zipfile.ZipFile(first) as archive:
+        assert "fivedrisk-plugin/untracked-secret.txt" not in archive.namelist()
+        assert archive.read("fivedrisk-plugin/plugin.json") == b"{}\n"
+        modes = {
+            info.filename: (info.external_attr >> 16) & 0o777
+            for info in archive.infolist()
+        }
+    assert modes["fivedrisk-plugin/plugin.json"] == 0o644
+    assert modes["fivedrisk-plugin/scripts/run"] == 0o755
+
+
+def test_git_archive_rejects_a_tracked_symlink(tmp_path: Path):
+    repo, source = _minimal_plugin_repo(tmp_path)
+    (source / "link").symlink_to("plugin.json")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "add symlink")
+    with pytest.raises(RuntimeError, match="unsupported Git entry"):
+        build_plugin_archive.build_from_git(source, tmp_path / "plugin.zip", "HEAD")
+
+
+def test_tar_reader_rejects_traversal_before_destination_replacement(tmp_path: Path):
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w") as archive:
+        member = tarfile.TarInfo("../escape")
+        member.size = 1
+        archive.addfile(member, io.BytesIO(b"x"))
+    destination = tmp_path / "existing.zip"
+    destination.write_bytes(b"keep")
+    modes = {PurePosixPath("fivedrisk-plugin/plugin.json"): 0o644}
+    with pytest.raises(RuntimeError, match="unsafe plugin archive path"):
+        entries = build_plugin_archive._tar_entries(
+            payload.getvalue(), PurePosixPath("fivedrisk-plugin"), modes
+        )
+        build_plugin_archive._write_zip(entries, destination, 1_800_000_000)
+    assert destination.read_bytes() == b"keep"

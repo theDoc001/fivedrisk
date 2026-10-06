@@ -5,13 +5,64 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import io
 import os
+import re
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+
+
+Entry = tuple[PurePosixPath, bytes, int]
+
+
+def _zip_time(epoch: int) -> tuple[int, int, int, int, int, int]:
+    if epoch < 0:
+        raise RuntimeError("SOURCE_DATE_EPOCH must be non-negative")
+    timestamp = dt.datetime.fromtimestamp(epoch, tz=dt.timezone.utc)
+    if timestamp.year < 1980:
+        timestamp = timestamp.replace(
+            year=1980, month=1, day=1, hour=0, minute=0, second=0
+        )
+    if timestamp.year > 2107:
+        raise RuntimeError("SOURCE_DATE_EPOCH exceeds the ZIP timestamp range")
+    second = timestamp.second - timestamp.second % 2
+    return (
+        timestamp.year,
+        timestamp.month,
+        timestamp.day,
+        timestamp.hour,
+        timestamp.minute,
+        second,
+    )
+
+
+def _write_zip(entries: list[Entry], destination: Path, epoch: int) -> None:
+    destination = destination.resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{destination.name}.", dir=destination.parent
+    )
+    os.close(descriptor)
+    try:
+        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED) as archive:
+            for relative, content, mode in sorted(entries, key=lambda entry: entry[0].as_posix()):
+                info = zipfile.ZipInfo(relative.as_posix(), _zip_time(epoch))
+                info.create_system = 3
+                info.compress_type = zipfile.ZIP_STORED
+                info.external_attr = (stat.S_IFREG | mode) << 16
+                archive.writestr(info, content)
+        os.replace(temporary, destination)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def build(source: Path, destination: Path, epoch: int) -> None:
@@ -19,12 +70,6 @@ def build(source: Path, destination: Path, epoch: int) -> None:
     destination = destination.resolve()
     if not source.is_dir() or destination == source or source in destination.parents:
         raise RuntimeError("plugin archive destination must be outside the source directory")
-    if epoch < 0:
-        raise RuntimeError("SOURCE_DATE_EPOCH must be non-negative")
-    timestamp = dt.datetime.fromtimestamp(epoch, tz=dt.timezone.utc)
-    if timestamp.year < 1980:
-        timestamp = timestamp.replace(year=1980, month=1, day=1, hour=0, minute=0, second=0)
-    zip_time = (timestamp.year, timestamp.month, timestamp.day, timestamp.hour, timestamp.minute, timestamp.second)
     paths = sorted(
         path
         for path in source.rglob("*")
@@ -35,34 +80,118 @@ def build(source: Path, destination: Path, epoch: int) -> None:
     )
     if not paths:
         raise RuntimeError("plugin source is empty")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
-    os.close(descriptor)
-    try:
-        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED) as archive:
-            for path in paths:
-                if path.is_symlink():
-                    raise RuntimeError(f"plugin archive refuses symlink: {path}")
-                relative = Path(source.name) / path.relative_to(source)
-                info = zipfile.ZipInfo(relative.as_posix(), zip_time)
-                info.create_system = 3
-                mode = stat.S_IMODE(path.stat().st_mode)
-                info.external_attr = (stat.S_IFREG | mode) << 16
-                archive.writestr(info, path.read_bytes())
-        os.replace(temporary, destination)
-    except Exception:
+    entries: list[Entry] = []
+    for path in paths:
+        if path.is_symlink():
+            raise RuntimeError(f"plugin archive refuses symlink: {path}")
+        relative = PurePosixPath(source.name) / PurePosixPath(
+            path.relative_to(source).as_posix()
+        )
+        mode = 0o755 if stat.S_IMODE(path.stat().st_mode) & 0o111 else 0o644
+        entries.append((relative, path.read_bytes(), mode))
+    _write_zip(entries, destination, epoch)
+
+
+def _git(root: Path, *args: str, binary: bool = False) -> str | bytes:
+    result = subprocess.run(
+        ("git", "-C", str(root), *args),
+        check=False,
+        capture_output=True,
+        text=not binary,
+    )
+    if result.returncode:
+        error = result.stderr
+        if isinstance(error, bytes):
+            error = error.decode("utf-8", errors="replace")
+        raise RuntimeError(error.strip() or "Git command failed")
+    return result.stdout
+
+
+def _tracked_modes(root: Path, commit: str, relative: PurePosixPath) -> dict[PurePosixPath, int]:
+    output = _git(
+        root,
+        "ls-tree",
+        "-rz",
+        "--full-tree",
+        commit,
+        "--",
+        relative.as_posix(),
+        binary=True,
+    )
+    assert isinstance(output, bytes)
+    modes: dict[PurePosixPath, int] = {}
+    for record in output.split(b"\0"):
+        if not record:
+            continue
+        metadata, separator, raw_path = record.partition(b"\t")
+        if not separator:
+            raise RuntimeError("malformed git tree record")
+        fields = metadata.split()
+        if len(fields) != 3:
+            raise RuntimeError("malformed git tree metadata")
+        mode, object_type, _object_id = fields
+        if object_type != b"blob" or mode not in {b"100644", b"100755"}:
+            path = raw_path.decode("utf-8", errors="replace")
+            raise RuntimeError(f"plugin archive refuses unsupported Git entry: {path}")
+        path = PurePosixPath(raw_path.decode("utf-8"))
         try:
-            os.unlink(temporary)
-        except FileNotFoundError:
-            pass
-        raise
+            within_source = path.relative_to(relative)
+        except ValueError as exc:
+            raise RuntimeError("Git tree entry escaped the plugin source") from exc
+        archive_path = PurePosixPath(relative.name) / within_source
+        if archive_path in modes:
+            raise RuntimeError(f"duplicate Git tree entry: {archive_path}")
+        modes[archive_path] = 0o755 if mode == b"100755" else 0o644
+    if not modes:
+        raise RuntimeError("plugin source is empty")
+    return modes
+
+
+def _tar_entries(
+    payload: bytes,
+    relative: PurePosixPath,
+    modes: dict[PurePosixPath, int],
+) -> list[Entry]:
+    entries: dict[PurePosixPath, Entry] = {}
+    try:
+        with tarfile.open(fileobj=io.BytesIO(payload), mode="r:") as archive:
+            for member in archive:
+                raw = PurePosixPath(member.name)
+                if raw.is_absolute() or ".." in raw.parts:
+                    raise RuntimeError(f"unsafe plugin archive path: {member.name}")
+                if member.isdir():
+                    continue
+                if not member.isfile():
+                    raise RuntimeError(
+                        f"plugin archive refuses non-regular TAR entry: {member.name}"
+                    )
+                try:
+                    within_source = raw.relative_to(relative)
+                except ValueError as exc:
+                    raise RuntimeError("TAR entry escaped the plugin source") from exc
+                normalized = PurePosixPath(relative.name) / within_source
+                if normalized in entries:
+                    raise RuntimeError(f"duplicate TAR entry: {normalized}")
+                extracted = archive.extractfile(member)
+                if extracted is None:
+                    raise RuntimeError(f"cannot read TAR entry: {member.name}")
+                mode = modes.get(normalized)
+                if mode is None:
+                    raise RuntimeError(f"unvalidated TAR entry: {member.name}")
+                entries[normalized] = (normalized, extracted.read(), mode)
+    except tarfile.TarError as exc:
+        raise RuntimeError("invalid Git TAR archive") from exc
+    if set(entries) != set(modes):
+        raise RuntimeError("Git TAR files do not match the validated tree")
+    return list(entries.values())
 
 
 def build_from_git(source: Path, destination: Path, ref: str) -> None:
     """Archive only files tracked by one immutable Git tree."""
 
+    source = source.resolve(strict=True)
     repository = subprocess.run(
-        ("git", "rev-parse", "--show-toplevel"),
+        ("git", "-C", str(source), "rev-parse", "--show-toplevel"),
         check=False,
         capture_output=True,
         text=True,
@@ -70,53 +199,43 @@ def build_from_git(source: Path, destination: Path, ref: str) -> None:
     if repository.returncode:
         raise RuntimeError("cannot resolve Git repository for plugin archive")
     root = Path(repository.stdout.strip()).resolve()
-    source = source.resolve(strict=True)
     try:
-        relative = source.relative_to(root)
+        relative = PurePosixPath(source.relative_to(root).as_posix())
     except ValueError as exc:
         raise RuntimeError("plugin source is outside the Git repository") from exc
-    destination = destination.resolve()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
-    os.close(descriptor)
+    commit_output = _git(root, "rev-parse", "--verify", f"{ref}^{{commit}}")
+    assert isinstance(commit_output, str)
+    commit = commit_output.strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{40,64}", commit):
+        raise RuntimeError("Git did not resolve an immutable commit")
+    epoch_output = _git(root, "show", "-s", "--format=%ct", commit)
+    assert isinstance(epoch_output, str)
     try:
-        result = subprocess.run(
-            (
-                "git",
-                "archive",
-                "--format=zip",
-                f"--prefix={source.name}/",
-                f"--output={temporary}",
-                f"{ref}:{relative.as_posix()}",
-            ),
-            cwd=root,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode:
-            raise RuntimeError(result.stderr.strip() or "git archive failed")
-        with zipfile.ZipFile(temporary) as archive:
-            names = set(archive.namelist())
-            required = {
-                f"{source.name}/plugin.json",
-                f"{source.name}/.codex-plugin/plugin.json",
-                f"{source.name}/.claude-plugin/plugin.json",
-                f"{source.name}/skills/fivedrisk-setup/SKILL.md",
-            }
-            if not required <= names:
-                raise RuntimeError("plugin archive is missing required public surfaces")
-            for info in archive.infolist():
-                mode = info.external_attr >> 16
-                if stat.S_ISLNK(mode):
-                    raise RuntimeError(f"plugin archive refuses symlink: {info.filename}")
-        os.replace(temporary, destination)
-    except Exception:
-        try:
-            os.unlink(temporary)
-        except FileNotFoundError:
-            pass
-        raise
+        epoch = int(epoch_output.strip())
+    except ValueError as exc:
+        raise RuntimeError("invalid Git commit timestamp") from exc
+    modes = _tracked_modes(root, commit, relative)
+    payload = _git(
+        root,
+        "archive",
+        "--format=tar",
+        commit,
+        "--",
+        relative.as_posix(),
+        binary=True,
+    )
+    assert isinstance(payload, bytes)
+    entries = _tar_entries(payload, relative, modes)
+    names = {entry[0].as_posix() for entry in entries}
+    required = {
+        f"{source.name}/plugin.json",
+        f"{source.name}/.codex-plugin/plugin.json",
+        f"{source.name}/.claude-plugin/plugin.json",
+        f"{source.name}/skills/fivedrisk-setup/SKILL.md",
+    }
+    if not required <= names:
+        raise RuntimeError("plugin archive is missing required public surfaces")
+    _write_zip(entries, destination, epoch)
 
 
 def main(argv: list[str] | None = None) -> int:
