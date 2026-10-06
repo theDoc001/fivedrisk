@@ -1,0 +1,29 @@
+{
+  "name": "fivedrisk",
+  "version": "0.7.1",
+  "description": "Deployment-specific 5D risk profiling, setup, verification, and recovery guidance for AI-agent action governance.",
+  "author": {
+    "name": "Loren Angoni",
+    "url": "https://github.com/theDoc001"
+  },
+  "homepage": "https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin",
+  "repository": "https://github.com/theDoc001/fivedrisk",
+  "license": "Apache-2.0",
+  "keywords": ["ai-agents", "risk-governance", "security", "guardrails"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "fivedrisk",
+    "shortDescription": "Configure 5D action-risk governance for an AI agent.",
+    "longDescription": "A deployment consultant for profiling an agent's likely actions, selecting deterministic and optional observer controls, configuring supported adapters, and verifying fail-closed behavior.",
+    "developerName": "Loren Angoni",
+    "category": "Developer Tools",
+    "capabilities": ["Advisory", "Configuration", "Verification"],
+    "websiteURL": "https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin",
+    "defaultPrompt": [
+      "Help me design and verify a 5D risk profile for my AI agent.",
+      "Review my agent's redacted system prompt and propose a 5D deployment profile.",
+      "Compare deterministic 5D with an observer LLM or TypeSafe Jev for my agent."
+    ],
+    "brandColor": "#C2410C"
+  }
+}

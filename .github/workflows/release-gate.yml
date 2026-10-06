@@ -1,0 +1,32 @@
+name: Release window audit
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-window:
+    name: release-window
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit external mutation time
+        run: python tools/release_window.py --action push
+
+  hook-contract:
+    name: hook-contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify tracked hook and gate
+        run: |
+          test -x .githooks/pre-push
+          test -f tools/release_window.py
+          grep -F 'tools/release_window.py' .githooks/pre-push

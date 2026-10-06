@@ -136,26 +136,40 @@ def to_verdict(
     """
     policy = policy or Policy()
     trace = dict(trace or {})
-    if session_id is not None:
-        trace.setdefault("session_id", session_id)
 
     def _fail_closed(reason: str, *, error: Optional[str] = None,
                      error_type: Optional[str] = None) -> Verdict:
         return Verdict(band="RED", sentinel=BLOCK, blocked=True, reason=reason,
                        error=error, error_type=error_type, trace=trace)
 
-    if not tool_name:
-        return _fail_closed("tool_name is required",
-                            error="tool_name is required", error_type="InvalidRequest")
+    if type(tool_name) is not str or not tool_name.strip():
+        return _fail_closed(
+            "tool_name must be a non-empty string",
+            error="tool_name must be a non-empty string",
+            error_type="InvalidRequest",
+        )
     if tool_input is None:
         tool_input = {}
     if not isinstance(tool_input, dict):
         return _fail_closed("params/tool_input must be a JSON object",
                             error="params/tool_input must be a JSON object",
                             error_type="InvalidRequest")
-    if autonomy is not None and not isinstance(autonomy, int):
-        return _fail_closed("autonomy must be an integer",
-                            error="autonomy must be an integer", error_type="InvalidRequest")
+    if autonomy is not None and (
+        type(autonomy) is not int or not 0 <= autonomy <= 4
+    ):
+        return _fail_closed(
+            "autonomy must be an integer in [0, 4]",
+            error="autonomy must be an integer in [0, 4]",
+            error_type="InvalidRequest",
+        )
+    if session_id is not None and type(session_id) is not str:
+        return _fail_closed(
+            "session_id must be a string or null",
+            error="session_id must be a string or null",
+            error_type="InvalidRequest",
+        )
+    if session_id is not None:
+        trace.setdefault("session_id", session_id)
 
     # Pre-score input layers: injection scan, then policy-driven semantic review.
     input_text = str(tool_input)

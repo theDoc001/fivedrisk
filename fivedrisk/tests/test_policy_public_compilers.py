@@ -50,13 +50,13 @@ AXIS = {"values": ["transfer"], "mode": "block", "match_mode": "any",
 
 def test_the_public_compiler_and_load_policy_agree_on_the_same_spec():
     direct = parse_axis_predicate(AXIS)
-    via_loader = _parse_floor_rules([{"band": "RED", "patterns": AXIS}])[0].patterns
+    via_loader = _parse_floor_rules([{"band": "YELLOW", "patterns": AXIS}])[0].patterns
     assert direct == via_loader, (
         "the same axis spec compiled two ways produced two different predicates")
 
 
 def test_a_compiled_predicate_matches_the_same_way_the_loader_would():
-    rule_direct = _parse_floor_rules([{"band": "RED", "patterns": AXIS}])[0]
+    rule_direct = _parse_floor_rules([{"band": "YELLOW", "patterns": AXIS}])[0]
     cued = {"body": "simulated transfer to the test account"}
     uncued = {"body": "transfer to the beneficiary account"}
     assert match_red_line(rule_direct, tool_name="Pay", tool_input=uncued) is True

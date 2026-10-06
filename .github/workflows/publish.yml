@@ -1,0 +1,154 @@
+name: Publish release
+
+on:
+  schedule:
+    - cron: "5 17 * * *"
+    - cron: "5 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.candidate.outputs.ready }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate scheduled DST slot
+        if: github.event_name == 'schedule'
+        run: python tools/release_window.py --action workflow-dispatch --scheduled-expression '${{ github.event.schedule }}'
+      - name: Validate manual dispatch window
+        if: github.event_name == 'workflow_dispatch'
+        run: python tools/release_window.py --action workflow-dispatch
+      - id: version
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - id: candidate
+        name: Bind publication to the independently cleared commit and remote state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CANDIDATE_SHA: ${{ vars.FIVEDRISK_RELEASE_CANDIDATE_SHA }}
+          QA_VERDICT_SHA: ${{ vars.FIVEDRISK_QA_VERDICT_SHA }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -z "$RELEASE_CANDIDATE_SHA" ] || [ -z "$QA_VERDICT_SHA" ]; then
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          test "$RELEASE_CANDIDATE_SHA" = "$GITHUB_SHA"
+          test "$QA_VERDICT_SHA" = "$GITHUB_SHA"
+
+          pypi=0
+          tag=0
+          release=0
+          curl --fail --silent --show-error "https://pypi.org/pypi/fivedrisk/$VERSION/json" >/dev/null && pypi=1 || true
+          tag_sha=$(git ls-remote origin "refs/tags/v$VERSION^{}" | awk '{print $1}')
+          test -n "$tag_sha" && tag=1 || true
+          gh release view "v$VERSION" >/dev/null 2>&1 && release=1 || true
+
+          if [ "$pypi$tag$release" = 111 ]; then
+            test "$tag_sha" = "$GITHUB_SHA"
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$pypi$tag$release" != 000 ]; then
+            echo "Partial release state for $VERSION; refusing automatic reconciliation." >&2
+            exit 2
+          fi
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        if: steps.candidate.outputs.ready == 'true'
+        with:
+          python-version: "3.12"
+      - name: Install release tooling
+        if: steps.candidate.outputs.ready == 'true'
+        run: python -m pip install --disable-pip-version-check build pytest twine
+      - name: Run release checks
+        if: steps.candidate.outputs.ready == 'true'
+        run: |
+          pytest fivedrisk/tests -q
+          python -m build
+          python -m twine check dist/*
+          python -m json.tool fivedrisk-plugin/plugin.json >/dev/null
+          python -m json.tool fivedrisk-plugin/.codex-plugin/plugin.json >/dev/null
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = json.loads(Path('fivedrisk-plugin/plugin.json').read_text())
+          codex = json.loads(Path('fivedrisk-plugin/.codex-plugin/plugin.json').read_text())
+          for key in ('name', 'version', 'description', 'author', 'homepage', 'repository', 'license', 'keywords'):
+              assert root[key] == codex[key], key
+          PY
+
+  publish-pypi:
+    needs: readiness
+    if: needs.readiness.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --disable-pip-version-check build
+      - run: python -m build
+      - name: Recheck immediately before PyPI mutation
+        run: python tools/release_window.py --action package-publish
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  verify-pypi:
+    needs: [readiness, publish-pypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify published package in a fresh environment
+        env:
+          VERSION: ${{ needs.readiness.outputs.version }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            python -m pip install --disable-pip-version-check --no-cache-dir "fivedrisk==$VERSION" && break
+            test "$attempt" -lt 5
+            sleep 15
+          done
+          python -c 'import fivedrisk; print(fivedrisk.__version__)'
+
+  github-release:
+    needs: [readiness, verify-pypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject conflicting remote release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.readiness.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION already exists; refusing to overwrite." >&2
+            exit 2
+          fi
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists; refusing to overwrite." >&2
+            exit 2
+          fi
+      - name: Recheck immediately before tag mutation
+        run: python tools/release_window.py --action tag
+      - name: Create and push release tag
+        env:
+          VERSION: ${{ needs.readiness.outputs.version }}
+        run: |
+          git tag -a "v$VERSION" -m "fivedrisk $VERSION"
+          git push origin "v$VERSION"
+      - name: Recheck immediately before GitHub release mutation
+        run: python tools/release_window.py --action github-release
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.readiness.outputs.version }}
+        run: gh release create "v$VERSION" --generate-notes --verify-tag

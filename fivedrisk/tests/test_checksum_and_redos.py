@@ -16,7 +16,7 @@ import time
 import pytest
 
 from fivedrisk.policy import (
-    AxisPredicate,
+    AxisPredicate, FieldValuePredicate,
     FloorRule,
     Policy,
     _parse_floor_rules,
@@ -156,6 +156,80 @@ def test_redos_fix_is_language_identical():
     for text in corpus:
         assert old_c.findall(text) == new_c.findall(text), text
         assert old_s.findall(text) == new_s.findall(text), text
+
+
+@pytest.mark.parametrize("entry", [
+    {"id": "nested", "band": "RED",
+     "patterns": {"mode": "block", "values": [r"(a+)+$"]}},
+    {"id": "alternation", "tool_name": "Bash", "band": "ORANGE",
+     "command_regex": r"(a|aa)+$"},
+    {"id": "field", "band": "RED",
+     "value_match": {"field": "body", "mode": "block", "kind": "regex",
+                     "values": [r"([a-zA-Z]+)*"]}},
+])
+def test_hard_floor_catastrophic_regexes_are_rejected_before_matching(entry):
+    with pytest.raises(ValueError, match="unsafe regex"):
+        _parse_floor_rules([entry])
+
+
+@pytest.mark.parametrize("rule", [
+    FloorRule(tool_name="Bash", band=Band.RED, command_regex=r"(a+)+$"),
+    FloorRule(band=Band.ORANGE, patterns=AxisPredicate(values=(r"(a|aa)+$",))),
+    FloorRule(
+        band=Band.RED,
+        value_match=FieldValuePredicate(
+            field="body", values=(r"([a-zA-Z]+)*",), mode="block", kind="regex"
+        ),
+    ),
+])
+def test_direct_hard_floor_catastrophic_regex_fails_closed_without_search(monkeypatch, rule):
+    import fivedrisk.policy as policy_module
+
+    def should_not_run(*args, **kwargs):
+        raise AssertionError("unsafe hard-floor regex reached the matching engine")
+
+    monkeypatch.setattr(policy_module, "_regex_search", should_not_run)
+    monkeypatch.setattr(policy_module, "_patterns_hit", should_not_run)
+    assert match_red_line(rule, tool_name="Bash", tool_input={"body": "benign"}) is True
+
+
+def test_hard_floor_still_accepts_a_bounded_safe_regex():
+    rule = _parse_floor_rules([
+        {"id": "drop-table", "band": "RED",
+         "patterns": {"mode": "block", "values": [r"(?i)drop\s+table"]}}
+    ])[0]
+    assert match_red_line(
+        rule, tool_name="Bash", tool_input={"command": "DROP TABLE users"}
+    ) is True
+
+
+@pytest.mark.parametrize("floor_body,expected", [
+    (
+        "  - id: catastrophic\n"
+        "    band: RED\n"
+        "    patterns:\n"
+        "      mode: block\n"
+        "      values: ['(a+)+$']\n",
+        "unsafe regex",
+    ),
+    (
+        "  - id: suppressing\n"
+        "    band: ORANGE\n"
+        "    patterns:\n"
+        "      mode: block\n"
+        "      values: ['(?i)transfer']\n"
+        "      negate_within: 3\n"
+        "      negate_cues: ['refund']\n",
+        "token-window negation",
+    ),
+])
+def test_validate_reports_hard_floor_regex_and_negation_as_errors(tmp_path, floor_body, expected):
+    from fivedrisk.cli import _validate_policy_config
+
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text("version: '0.7.0'\nfloor:\n" + floor_body)
+    errors = _validate_policy_config(str(policy_path))
+    assert any(expected in error for error in errors), errors
 
 
 # ═══════════ 4. OSS-CHECKSUM-BOUNDARY-001 — the checksum axis must not read across a field ═══════════

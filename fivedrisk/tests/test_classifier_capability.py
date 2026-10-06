@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from fivedrisk.classifier import classify_tool_call
 from fivedrisk.policy import Policy
 from fivedrisk.scorer import score
@@ -113,9 +115,12 @@ class TestClassifierCapability:
         action = classify_tool_call("Bash", {"command": "npm publish"})
         assert action.external_impact >= 2
 
-    def test_negative_autonomy_is_clamped_to_zero(self):
-        action = classify_tool_call("Read", {"file_path": "/tmp/a"}, autonomy_context=-4)
-        assert action.autonomy_context == 0
+    @pytest.mark.parametrize("invalid", [-4, -1, 5, True, False, 1.5, "2"])
+    def test_invalid_explicit_autonomy_is_rejected(self, invalid):
+        with pytest.raises(ValueError, match="integer in \\[0, 4\\]"):
+            classify_tool_call(
+                "Read", {"file_path": "/tmp/a"}, autonomy_context=invalid
+            )
 
     def test_unknown_tool_still_applies_content_heuristics(self):
         action = classify_tool_call("Custom", {"text": "delete password=secret"})

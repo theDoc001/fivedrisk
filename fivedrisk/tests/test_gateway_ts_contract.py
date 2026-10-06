@@ -9,6 +9,7 @@ would break the TS client fails HERE, in the Python suite, instead of silently i
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 
@@ -16,10 +17,10 @@ import pytest
 
 
 def _run_gateway(requests):
-    """Spawn `python -m fivedrisk gateway stdio`, send requests, return
+    """Spawn the isolated installed gateway bootstrap, send requests, return
     (handshake_dict, [response_dicts]) — mirrors the TS client's transport."""
     proc = subprocess.Popen(
-        [sys.executable, "-m", "fivedrisk", "gateway", "stdio"],
+        [sys.executable, "-I", "-m", "fivedrisk._bootstrap", "gateway", "stdio"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True,
     )
@@ -39,6 +40,9 @@ def test_handshake_shape():
     assert handshake["ready"] is True
     assert handshake["protocol_version"] == 1   # TS client's EXPECTED_PROTOCOL_VERSION
     assert handshake["engine"] == "fivedrisk"
+    assert handshake["engine_version"].startswith("0.7.")
+    patch = handshake["engine_version"].removeprefix("0.7.")
+    assert patch.isdigit() and int(patch) >= 1
 
 
 def test_id_echoed_for_correlation():
@@ -82,3 +86,42 @@ def test_multiple_requests_correlate_by_id():
     by_id = {r.get("id"): r for r in responses}
     assert by_id["a"]["band"] == "GREEN"
     assert by_id["b"]["band"] == "RED"
+
+
+def test_documented_isolated_one_shot_gateway_command_runs():
+    request = json.dumps({
+        "id": "red", "tool_name": "Bash", "params": {"command": "rm -rf /"},
+    }) + "\n"
+    proc = subprocess.run(
+        [sys.executable, "-I", "-m", "fivedrisk._bootstrap", "gateway", "score"],
+        input=request, capture_output=True, text=True, timeout=30,
+    )
+    assert proc.returncode == 0, proc.stderr
+    response = json.loads(proc.stdout)
+    assert response["band"] == "RED"
+
+
+def test_isolated_gateway_bootstrap_ignores_hostile_cwd_and_pythonpath(tmp_path):
+    marker = tmp_path / "shadow-ran"
+    shadow = tmp_path / "fivedrisk"
+    shadow.mkdir()
+    (shadow / "__init__.py").write_text('__version__ = "0.7.1"\n')
+    (shadow / "_bootstrap.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('ran')\n"
+    )
+    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    proc = subprocess.Popen(
+        [sys.executable, "-I", "-m", "fivedrisk._bootstrap", "gateway", "stdio"],
+        cwd=tmp_path, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True,
+    )
+    request = json.dumps({
+        "id": "red", "tool_name": "Bash", "params": {"command": "rm -rf /"},
+    }) + "\n"
+    stdout, stderr = proc.communicate(request, timeout=30)
+    assert proc.returncode == 0, stderr
+    lines = [json.loads(line) for line in stdout.splitlines() if line.strip()]
+    assert lines[0]["engine_version"] == "0.7.1"
+    assert lines[1]["band"] == "RED"
+    assert not marker.exists()

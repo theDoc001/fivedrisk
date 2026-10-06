@@ -196,6 +196,311 @@ class TestPreToolHook:
 @pytest.mark.asi02_tool_misuse
 @pytest.mark.asi05_code_execution
 class TestGateDecorator:
+    def test_gate_blocks_destructive_positional_command_before_sync_executor(self, tmp_path):
+        _reset_hooks(tmp_path)
+        executor_calls = []
+
+        @gate(tool_name="Bash")
+        def run(command: str) -> str:
+            executor_calls.append(command)
+            return "executed"
+
+        with pytest.raises(hooks.BandBlockError):
+            run("rm -rf /")
+        assert executor_calls == []
+
+    def test_gate_blocks_destructive_positional_command_before_async_executor(self, tmp_path):
+        _reset_hooks(tmp_path)
+        executor_calls = []
+
+        @gate(tool_name="Bash")
+        async def run(command: str) -> str:
+            executor_calls.append(command)
+            return "executed"
+
+        with pytest.raises(hooks.BandBlockError):
+            asyncio.run(run("rm -rf /"))
+        assert executor_calls == []
+
+    def test_gate_safe_positional_and_keyword_calls_still_execute(self, tmp_path):
+        _reset_hooks(tmp_path)
+        executor_calls = []
+
+        @gate(tool_name="Bash")
+        def run(command: str) -> str:
+            executor_calls.append(command)
+            return command
+
+        assert run("echo positional") == "echo positional"
+        assert run(command="echo keyword") == "echo keyword"
+        assert executor_calls == ["echo positional", "echo keyword"]
+
+        blocked_executor_calls = []
+
+        @gate(tool_name="Bash", on_block=lambda reason: f"handled: {reason}")
+        def handled(command: str) -> str:
+            blocked_executor_calls.append(command)
+            return "executed"
+
+        assert handled("rm -rf /").startswith("handled: 5D RED")
+        assert blocked_executor_calls == []
+
+        def raising_handler(reason: str):
+            raise RuntimeError(f"callback failed: {reason}")
+
+        @gate(tool_name="Bash", on_block=raising_handler)
+        def callback_failure(command: str) -> str:
+            blocked_executor_calls.append(command)
+            return "executed"
+
+        with pytest.raises(RuntimeError, match="callback failed: 5D RED"):
+            callback_failure("rm -rf /")
+        assert blocked_executor_calls == []
+
+        async def async_handler(reason: str) -> str:
+            return f"async handled: {reason}"
+
+        @gate(tool_name="Bash", on_block=async_handler)
+        async def async_handled(command: str) -> str:
+            blocked_executor_calls.append(command)
+            return "executed"
+
+        result = asyncio.run(async_handled("rm -rf /"))
+        assert result.startswith("async handled: 5D RED")
+        assert blocked_executor_calls == []
+
+    def test_gate_tool_input_binding_preserves_legacy_and_mixed_shapes(self):
+        def run(command="echo default", *parts, flag=False, **extra):
+            return None
+
+        tool_input = hooks._build_gate_tool_input(
+            run,
+            ("echo mixed", "tail"),
+            {"flag": True, "destination": "local"},
+        )
+
+        assert tool_input["_args"] == str(("echo mixed", "tail"))
+        assert tool_input["command"] == "echo mixed"
+        assert tool_input["parts"] == str(("tail",))
+        assert tool_input["flag"] == "True"
+        assert tool_input["destination"] == "local"
+        assert "extra" not in tool_input
+
+    def test_gate_rejects_custom_string_without_invoking_conversion_or_executor(self, tmp_path):
+        _reset_hooks(tmp_path)
+        markers = []
+        executor_calls = []
+
+        class HostileString(str):
+            def __str__(self):
+                markers.append("str")
+                return "echo harmless"
+
+            def __repr__(self):
+                markers.append("repr")
+                return "'echo harmless'"
+
+        @gate(tool_name="Bash")
+        def run(command: str) -> str:
+            executor_calls.append(command)
+            return "executed"
+
+        with pytest.raises(hooks.GateInputError):
+            run(HostileString("rm -rf /"))
+        assert markers == []
+        assert executor_calls == []
+
+    def test_gate_rejects_nested_custom_values_cycles_and_nonfinite_numbers(self, tmp_path):
+        _reset_hooks(tmp_path)
+        executor_calls = []
+
+        class Hostile:
+            def __iter__(self):
+                raise AssertionError("custom iterator must not run")
+
+            def __str__(self):
+                raise AssertionError("custom string conversion must not run")
+
+        @gate(tool_name="Read")
+        def consume(value):
+            executor_calls.append(value)
+
+        cyclic = []
+        cyclic.append(cyclic)
+        for value in ({"nested": Hostile()}, cyclic, float("nan"), float("inf")):
+            with pytest.raises(hooks.GateInputError):
+                consume(value)
+        assert executor_calls == []
+
+    def test_gate_executes_detached_data_and_preserves_aliasing(self, tmp_path):
+        _reset_hooks(tmp_path)
+        shared = ["safe"]
+        original = {"left": shared, "right": shared}
+
+        @gate(tool_name="Read")
+        def consume(value):
+            assert value is not original
+            assert value["left"] is value["right"]
+            value["left"].append("inside")
+            return value
+
+        received = consume(original)
+        assert received["left"] == ["safe", "inside"]
+        assert original == {"left": ["safe"], "right": ["safe"]}
+
+    def test_gate_rejects_instance_class_and_metaclass_receivers(self, tmp_path):
+        _reset_hooks(tmp_path)
+        calls = []
+
+        class Runner:
+            @gate(tool_name="Read")
+            def run(self, path: str) -> str:
+                calls.append(path)
+                return path
+
+            @classmethod
+            @gate(tool_name="Read")
+            def class_run(cls, path: str) -> str:
+                calls.append(path)
+                return path
+
+        class RunnerMeta(type):
+            @gate(tool_name="Read")
+            def meta_run(cls, path: str) -> str:
+                calls.append(path)
+                return path
+
+        class MetaRunner(metaclass=RunnerMeta):
+            pass
+
+        with pytest.raises(hooks.GateInputError):
+            Runner().run("/tmp/safe.txt")
+        with pytest.raises(hooks.GateInputError):
+            Runner.run(self=Runner(), path="/tmp/safe.txt")
+        with pytest.raises(hooks.GateInputError):
+            Runner.class_run("/tmp/safe.txt")
+        with pytest.raises(hooks.GateInputError):
+            MetaRunner.meta_run("/tmp/safe.txt")
+        assert calls == []
+
+    def test_gate_rejects_async_method_receiver(self, tmp_path):
+        _reset_hooks(tmp_path)
+        calls = []
+
+        class Runner:
+            @gate(tool_name="Read")
+            async def run(self, path: str) -> str:
+                calls.append(path)
+                return path
+
+        with pytest.raises(hooks.GateInputError):
+            asyncio.run(Runner().run("/tmp/safe.txt"))
+        assert calls == []
+
+    @pytest.mark.parametrize("parameter_name", ["self", "cls"])
+    def test_gate_standalone_self_or_cls_is_scored_as_action_data(
+        self, tmp_path, parameter_name
+    ):
+        _reset_hooks(tmp_path)
+        calls = []
+        namespace = {"gate": gate, "calls": calls}
+        exec(
+            f'@gate(tool_name="Bash")\n'
+            f'def run(command, {parameter_name}):\n'
+            f'    calls.append((command, {parameter_name}))\n',
+            namespace,
+        )
+        with pytest.raises(hooks.BandBlockError):
+            namespace["run"]("rm -rf /target", "ordinary-data")
+        assert calls == []
+
+    @pytest.mark.parametrize("value", [["echo", "safe"], ("echo", "safe")])
+    def test_gate_bash_rejects_structured_argv_before_sync_executor(self, tmp_path, value):
+        _reset_hooks(tmp_path)
+        calls = []
+
+        @gate(tool_name="Bash")
+        def run(command):
+            calls.append(command)
+
+        with pytest.raises(hooks.GateInputError, match="one exact built-in string"):
+            run(value)
+        assert calls == []
+
+    def test_gate_bash_rejects_structured_argv_before_async_executor(self, tmp_path):
+        _reset_hooks(tmp_path)
+        calls = []
+
+        @gate(tool_name="Bash")
+        async def run(command):
+            calls.append(command)
+
+        with pytest.raises(hooks.GateInputError, match="one exact built-in string"):
+            asyncio.run(run(["rm", "-rf", "/target"]))
+        assert calls == []
+
+    def test_gate_bash_rejects_variadic_signature(self, tmp_path):
+        _reset_hooks(tmp_path)
+        calls = []
+
+        @gate(tool_name="Bash")
+        def run(command, *parts):
+            calls.append((command, parts))
+
+        with pytest.raises(hooks.GateInputError, match="variadic"):
+            run("echo safe")
+        assert calls == []
+
+    def test_gate_input_rejection_routes_through_sync_and_async_on_block(self, tmp_path):
+        _reset_hooks(tmp_path)
+        calls = []
+
+        @gate(tool_name="Read", on_block=lambda reason: "blocked: " + reason)
+        def sync_run(value):
+            calls.append(value)
+
+        async def async_block(reason):
+            return "blocked: " + reason
+
+        @gate(tool_name="Read", on_block=async_block)
+        async def async_run(value):
+            calls.append(value)
+
+        assert sync_run(object()).startswith("blocked: @gate action data uses an unsupported custom type")
+        assert asyncio.run(async_run(object())).startswith(
+            "blocked: @gate action data uses an unsupported custom type"
+        )
+        assert calls == []
+
+    def test_gate_invalid_call_retains_native_typeerror(self, tmp_path):
+        _reset_hooks(tmp_path)
+
+        @gate(tool_name="Read")
+        def read_file(path: str) -> str:
+            return path
+
+        with pytest.raises(TypeError):
+            read_file()
+
+    def test_gate_internal_overrides_do_not_enter_policy_input(self, tmp_path, monkeypatch):
+        _reset_hooks(tmp_path)
+        captured = {}
+        original = hooks.classify_tool_call
+
+        def capture(**kwargs):
+            captured.update(kwargs["tool_input"])
+            return original(**kwargs)
+
+        monkeypatch.setattr(hooks, "classify_tool_call", capture)
+
+        @gate(tool_name="Read")
+        def read_file(path: str) -> str:
+            return path
+
+        assert read_file("/tmp/safe.txt", _fivedrisk_input_tokens=1) == "/tmp/safe.txt"
+        assert captured["path"] == "/tmp/safe.txt"
+        assert not any(key.startswith("_fivedrisk_") for key in captured)
+
     def test_gate_allows_safe_call_without_session(self, tmp_path):
         _reset_hooks(tmp_path)
 

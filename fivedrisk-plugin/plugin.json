@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "fivedrisk",
+  "version": "0.7.1",
+  "description": "Deployment-specific 5D risk profiling, setup, verification, and recovery guidance for AI-agent action governance.",
+  "author": {
+    "name": "Loren Angoni",
+    "url": "https://github.com/theDoc001"
+  },
+  "homepage": "https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin",
+  "repository": "https://github.com/theDoc001/fivedrisk",
+  "license": "Apache-2.0",
+  "keywords": ["ai-agents", "risk-governance", "security", "guardrails"]
+}

@@ -44,6 +44,8 @@ RELEASE_NOTES.md
 # Runtime artifacts (decision logs, benchmark DBs, backups)
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 *.db.*
 *.bak
 

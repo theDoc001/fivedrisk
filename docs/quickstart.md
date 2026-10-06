@@ -5,33 +5,48 @@ End-to-end in 5 minutes. By the end you will have a Python function gated by 5D 
 ## 1. Install
 
 ```bash
-pip install fivedrisk
-python -c "import fivedrisk; print(fivedrisk.__version__)"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 ```
 
 ## 2. Gate a function with @gate
 
+Pass action data as exact built-in values (`None`, booleans, integers, finite
+floats, strings, lists, tuples, and string-keyed dictionaries). `@gate` detaches
+that data, scores it, and executes the same snapshot. Custom objects, subclasses,
+cycles, and non-finite floats fail closed with `GateInputError`; convert them at
+the call boundary instead of relying on custom serialization. Instance and class
+methods have custom receiver objects and are therefore unsupported; gate a static
+or free data-only boundary function instead. For `tool_name="Bash"`, `command`
+must be one exact built-in string; argv lists, tuples, and variadic signatures fail
+closed before scoring or execution.
+
 Save as `try_fivedrisk.py`:
 
 ```python
-from fivedrisk.hooks import gate, configure
-from fivedrisk import load_policy
+from fivedrisk.hooks import FivedriskDenial, configure, gate
 
 configure(policy_path=None)  # uses sensible defaults
 
-@gate(tool_name="write_to_database", autonomy_context=2)
-def write_record(table: str, data: dict) -> str:
-    # Real code would write to the database here.
-    return f"wrote {len(data)} fields to {table}"
+executed_commands = []
 
-print(write_record("users", {"name": "Loren"}))         # GREEN → executes
+@gate(tool_name="Bash", autonomy_context=2)
+def run_shell(command: str) -> str:
+    # This quickstart is a simulator: it never invokes a real shell.
+    executed_commands.append(command)
+    return f"[simulated] would execute: {command}"
+
+print(run_shell("echo hello-from-fivedrisk"))  # GREEN → executes
 try:
-    print(write_record("users", {"command": "DROP TABLE users"}))  # RED → blocked
-except ValueError as e:
+    print(run_shell("rm -rf /tmp/important"))  # RED → blocked before the body runs
+except FivedriskDenial as e:
     print("blocked:", e)
+
+assert executed_commands == ["echo hello-from-fivedrisk"]
 ```
 
-Run it. You will see one success and one block. The block raises `ValueError` because no `on_block` callback was supplied; pass one to customize behavior.
+Run it. You will see one simulated success and one block. No shell command runs. With no `on_block` callback, a block raises `FivedriskDenial` (`BandBlockError`); if you supply `on_block(reason)`, the protected function still does not run and the callback's return value becomes the decorated call's return value. Callback exceptions propagate, and async callbacks are awaited.
 
 ## 3. Inspect the audit log
 
@@ -165,11 +180,13 @@ if scan_input_for_injection(user_message):
 
 ## What is next
 
-- Worked examples (minimal `@gate`, OpenAI Agents SDK hook, LangGraph multi-step): [`examples/`](../examples/).
-- Architecture: [`fivedrisk/ARCHITECTURE.md`](../fivedrisk/ARCHITECTURE.md).
+- Worked examples (minimal `@gate`, LangGraph per-call routing, and SPIFFE/MCP identity flow): [`examples/`](../examples/).
+- OpenAI Agents SDK wiring: [`fivedrisk-setup` adapter reference](../fivedrisk-plugin/skills/fivedrisk-setup/references/adapters.md#openai-agents-sdk).
 - Markov SafetyDrift for compositional attacks: README "SafetyDrift" section.
 - Audit log fields and SIEM export: README "Audit log" section.
-- Coverage docs for OWASP LLM Top 10, OWASP Agentic Top 10, MITRE ATLAS: top-level `dev/`.
+- Coverage: [OWASP LLM Top 10](../owasp-llm-top10-coverage.md),
+  [OWASP Agentic Top 10](../owasp-agentic-top10-coverage.md), and
+  [MITRE ATLAS](../mitre-atlas-coverage.md).
 
 ## Honest limits
 

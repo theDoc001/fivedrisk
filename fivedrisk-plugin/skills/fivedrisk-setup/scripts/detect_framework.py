@@ -1,14 +1,14 @@
-#!/usr/bin/env python3
 """detect_framework.py — tell the operator which 5D adapter to wire.
 
 Probes which agent frameworks are importable in the current environment and, for
 each, prints the matching fivedrisk adapter import + a one-line wiring snippet. No
-network, no writes, no side effects — pure detection. Frameworks that live in
+The script itself performs no intentional network access or writes. Python module
+discovery may import parent packages or invoke registered finder hooks. Frameworks that live in
 Node (Vercel AI SDK, Genkit) or are CLI-wired (Claude Code) are always listed with
 their non-Python wiring, since this Python probe can't see them.
 
 Run:
-    python3 scripts/detect_framework.py
+    <SELECTED_PYTHON> <SKILL_ROOT>/scripts/detect_framework.py
 
 Exit code is always 0 (detection, not gating).
 """
@@ -16,6 +16,9 @@ Exit code is always 0 (detection, not gating).
 from __future__ import annotations
 
 import importlib.util
+import json
+import shlex
+import sys
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -29,8 +32,6 @@ class Adapter:
     node: bool = False     # lives in Node, not probeable from Python
 
 
-# The 5D "works with" surface — each entry maps a framework to the adapter built
-# for it (M1/M2/M4/M5) or the already-shipped LangGraph node.
 ADAPTERS: List[Adapter] = [
     Adapter("crewai", "CrewAI",
             "from fivedrisk.framework_adapters import make_crewai_pre_tool_hook",
@@ -52,12 +53,14 @@ ADAPTERS: List[Adapter] = [
             "graph.add_node('fivedrisk_gate', fivedrisk_gate_node)"),
     Adapter("__claude_code__", "Claude Code (CLI hook)",
             "# no import — wire the CLI in .claude/settings.json",
-            "PreToolUse/PostToolUse hook -> `python -m fivedrisk claude-hook`", node=True),
+            "PreToolUse/PostToolUse hook -> `<SELECTED_PYTHON> -I -m fivedrisk._bootstrap claude-hook`", node=True),
     Adapter("__vercel__", "Vercel AI SDK (Node)",
             "// npm install fivedrisk-gateway",
-            "guardVercelTool(new FivedriskGateway(), 'my_tool', tool)", node=True),
+            f"const gw = new FivedriskGateway({{ command: {json.dumps(sys.executable)} }}); "
+            "guardVercelTool(gw, 'my_tool', tool)", node=True),
     Adapter("__genkit__", "Genkit (Node)",
             "// npm install fivedrisk-gateway",
+            f"const gw = new FivedriskGateway({{ command: {json.dumps(sys.executable)} }}); "
             "ai.defineTool({name}, guardGenkitTool(gw, 'my_tool', handler))", node=True),
 ]
 
@@ -65,7 +68,7 @@ ADAPTERS: List[Adapter] = [
 def _importable(module: str) -> bool:
     try:
         return importlib.util.find_spec(module) is not None
-    except (ImportError, ValueError, ModuleNotFoundError):
+    except Exception:
         return False  # a broken/partial install is "not usable"
 
 
@@ -74,12 +77,13 @@ def detect(adapters: Optional[List[Adapter]] = None) -> List[dict]:
     rows = []
     for a in adapters if adapters is not None else ADAPTERS:
         installed = None if a.node else _importable(a.module)
+        wiring = a.wiring.replace("<SELECTED_PYTHON>", shlex.quote(sys.executable))
         rows.append({
             "framework": a.framework,
             "installed": installed,   # True/False for Python, None for Node/CLI
             "node": a.node,
             "wiring_import": a.wiring_import,
-            "wiring": a.wiring,
+            "wiring": wiring,
         })
     return rows
 
@@ -103,7 +107,8 @@ def main() -> int:
         print()
     if not any_py:
         print("No Python agent framework detected. That's fine — you can still use the")
-        print("`@gate` decorator, the CLI (`fivedrisk score` / `claude-hook`), or the")
+        shell_python = shlex.quote(sys.executable)
+        print(f"`@gate` decorator, the CLI (`{shell_python} -I -m fivedrisk._bootstrap score` / `claude-hook`), or the")
         print("Node client (`npm install fivedrisk-gateway`) for Vercel/Genkit.")
     return 0
 

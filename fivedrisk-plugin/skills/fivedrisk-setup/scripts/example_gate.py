@@ -1,8 +1,7 @@
-#!/usr/bin/env python3
 """example_gate.py — the smallest end-to-end fivedrisk demo (framework-neutral).
 
-Run (after `pip install fivedrisk`):
-    python3 scripts/example_gate.py
+Run with the interpreter selected by the setup workflow:
+    <SELECTED_PYTHON> -I <SKILL_ROOT>/scripts/example_gate.py
 
 Shows the four-band outcome in ~40 lines: a GREEN benign call that executes, a RED
 destructive call that is blocked before it runs, the 5D rationale for each, and the
@@ -16,15 +15,15 @@ so the setup playbook can run it as its final verification step.
 from __future__ import annotations
 
 import os
-from pathlib import Path
+import sys
 
 from fivedrisk.hooks import FivedriskDenial, configure, gate
 from fivedrisk.logger import DecisionLog
 
-# Load the operator's policy if FIVEDRISK_POLICY_PATH points at one, else the
-# shipped defaults. No broad except — a real misconfig should fail loud.
+# Absence selects shipped defaults. A non-empty explicit path is always passed to
+# the loader so a missing or invalid operator policy fails loudly.
 _policy = os.environ.get("FIVEDRISK_POLICY_PATH")
-configure(policy_path=_policy if _policy and Path(_policy).expanduser().exists() else None)
+configure(policy_path=_policy or None)
 
 
 @gate(tool_name="Bash", autonomy_context=2)
@@ -45,12 +44,17 @@ def main() -> None:
         # NOT subclass ValueError — catching ValueError would let a block fall
         # through as a fail-open, so catch the denial base explicitly.
         print(f"blocked: {exc}")
+    else:
+        raise RuntimeError("destructive simulated call was not denied")
 
     print("\n--- audit log (last 5 decisions) ---")
     for row in DecisionLog().query_recent(limit=5):
         print(f"  {row['band']:6}  {row['tool_name']:8}  {row['rationale']}")
 
-    print("\nFor a running summary:  python3 -m fivedrisk stats")
+    print(
+        f"\nFor a running summary:  {sys.executable} "
+        "-I -m fivedrisk._bootstrap stats"
+    )
 
 
 if __name__ == "__main__":

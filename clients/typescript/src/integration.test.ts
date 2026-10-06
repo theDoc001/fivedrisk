@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { FivedriskGateway } from "./gateway.js";
 
 // Live end-to-end: the real TS client spawns the real Python gateway and scores.
-// Skips unless FIVEDRISK_PY points at a python with fivedrisk installed, so this
-// stays green in environments without the engine. Run locally with:
-//   FIVEDRISK_PY=~/.venvs/fivedrisk-dev/bin/python node --test dist/integration.test.js
+// Release-required: FIVEDRISK_PY must point at an absolute verified interpreter
+// with fivedrisk installed. Missing configuration is a failure, never a skip.
 const PY = process.env.FIVEDRISK_PY;
+if (!PY) throw new Error("FIVEDRISK_PY is required for the live release test");
 
-test("live gateway: RED blocks, GREEN executes, correlation holds", { skip: !PY }, async () => {
-  const gw = new FivedriskGateway({ command: PY!, args: ["-m", "fivedrisk", "gateway", "stdio"] });
+test("live gateway: RED blocks, GREEN executes, correlation holds", async () => {
+  const gw = new FivedriskGateway({ command: PY, args: ["-m", "fivedrisk", "gateway", "stdio"] });
   try {
     const green = await gw.score({ toolName: "Read", toolInput: { file_path: "/tmp/a" } });
     assert.equal(green.band, "GREEN");
@@ -34,8 +34,8 @@ test("live gateway: RED blocks, GREEN executes, correlation holds", { skip: !PY 
   }
 });
 
-test("live gateway: bad tool_input fails closed to block", { skip: !PY }, async () => {
-  const gw = new FivedriskGateway({ command: PY!, args: ["-m", "fivedrisk", "gateway", "stdio"] });
+test("live gateway: bad tool_input fails closed to block", async () => {
+  const gw = new FivedriskGateway({ command: PY, args: ["-m", "fivedrisk", "gateway", "stdio"] });
   try {
     // a non-object params → gateway error → TS maps to fail-closed BLOCK
     const v = await gw.score({ toolName: "Bash", toolInput: "rm -rf /data" });

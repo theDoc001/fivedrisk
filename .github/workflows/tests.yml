@@ -29,3 +29,40 @@ jobs:
 
       - name: Run pytest
         run: pytest fivedrisk/tests/ -q --maxfail=10
+
+      - name: Build and inspect runtime-only wheel
+        if: matrix.python-version == '3.12'
+        run: |
+          python -m pip wheel . --no-deps --wheel-dir wheelhouse
+          python tools/verify_wheel.py wheelhouse/fivedrisk-*.whl
+
+  typescript-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install non-editable Python gateway
+        run: python -m pip install .
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clients/typescript/package-lock.json
+
+      - name: Install TypeScript toolchain
+        working-directory: clients/typescript
+        run: npm ci
+
+      - name: Run TypeScript release gate
+        working-directory: clients/typescript
+        run: npm run test:release
+        env:
+          FIVEDRISK_PY: ${{ env.pythonLocation }}/bin/python

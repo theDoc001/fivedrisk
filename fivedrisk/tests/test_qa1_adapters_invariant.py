@@ -196,11 +196,11 @@ class TestToVerdictFailsClosed:
         assert v.allowed is False
         assert v.band == "RED"
 
-    @pytest.mark.parametrize("bad_name", [None, "", 0, False])
+    @pytest.mark.parametrize("bad_name", [None, "", "   ", 0, 1, False, True, [], {}])
     def test_missing_or_empty_tool_name(self, bad_name):
         v = to_verdict(bad_name, {"x": 1})  # type: ignore[arg-type]
         self._assert_blocked(v)
-        assert v.error == "tool_name is required"
+        assert v.error == "tool_name must be a non-empty string"
 
     @pytest.mark.parametrize("bad_input", ["str", 123, 4.5, ["list"], True, (1, 2)])
     def test_non_dict_tool_input(self, bad_input):
@@ -208,17 +208,31 @@ class TestToVerdictFailsClosed:
         self._assert_blocked(v)
         assert v.error and "must be a JSON object" in v.error
 
-    @pytest.mark.parametrize("bad_autonomy", ["3", 2.0, [1], {"a": 1}])
+    @pytest.mark.parametrize(
+        "bad_autonomy", ["3", 2.0, [1], {"a": 1}, True, False, -1, 5]
+    )
     def test_non_int_autonomy(self, bad_autonomy):
         v = to_verdict("Read", {"file_path": "/tmp/a"}, autonomy=bad_autonomy)  # type: ignore[arg-type]
         self._assert_blocked(v)
-        assert v.error == "autonomy must be an integer"
+        assert v.error == "autonomy must be an integer in [0, 4]"
 
-    def test_bool_autonomy_is_accepted_as_int(self):
-        # bool IS an int subclass; documenting actual behavior (not a fail-closed
-        # concern — a truthy/falsey autonomy still scores, never demotes a stop).
-        v = to_verdict("Read", {"file_path": "/tmp/a"}, autonomy=True)  # type: ignore[arg-type]
-        assert v.sentinel in SENTINELS
+    @pytest.mark.parametrize("valid_autonomy", [None, 0, 1, 2, 3, 4])
+    def test_valid_autonomy_range_is_preserved(self, valid_autonomy):
+        v = to_verdict("Read", {"file_path": "/tmp/a"}, autonomy=valid_autonomy)
+        assert v.error is None
+        assert v.scores is not None
+        assert v.scores["autonomy_context"] == (valid_autonomy or 0)
+
+    @pytest.mark.parametrize("bad_session", [[], {}, True, False, 0, 1, 1.5])
+    def test_non_string_session_id_fails_closed(self, bad_session):
+        v = to_verdict("Read", {"file_path": "/tmp/a"}, session_id=bad_session)  # type: ignore[arg-type]
+        self._assert_blocked(v)
+        assert v.error == "session_id must be a string or null"
+
+    @pytest.mark.parametrize("session_id", [None, "", "session-1"])
+    def test_valid_session_id_contract(self, session_id):
+        v = to_verdict("Read", {"file_path": "/tmp/a"}, session_id=session_id)
+        assert v.error is None
 
     def test_classifier_valueerror_fails_closed(self, monkeypatch):
         def boom(**kwargs):
@@ -335,7 +349,10 @@ class TestGatewayContractUnchanged:
 
     def test_error_shape_missing_tool_name(self):
         d = self._score({"params": {"x": 1}})
-        assert d == {"error": "tool_name is required", "error_type": "InvalidRequest"}
+        assert d == {
+            "error": "tool_name must be a non-empty string",
+            "error_type": "InvalidRequest",
+        }
 
     def test_error_shape_bad_input(self):
         d = self._score({"tool_name": "Bash", "params": "not-a-dict"})

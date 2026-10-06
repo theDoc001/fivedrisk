@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fivedrisk"
-version = "0.7.0"
+version = "0.7.1"
 description = "Per-action AI agent risk scoring and governance: 5-dimension scoring, HITL enforcement, Markov drift detection, injection scanning, and auditable decision logs."
 readme = { file = "fivedrisk/README.md", content-type = "text/markdown" }
 license = { text = "Apache-2.0" }
@@ -52,12 +52,12 @@ fivedrisk = "fivedrisk.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["fivedrisk*"]
+include = ["fivedrisk", "fivedrisk.*"]
+exclude = ["fivedrisk.tests", "fivedrisk.tests.*"]
+namespaces = false
 
 [tool.setuptools.package-data]
-# Low-19: ship tests/golden_set/*.json so test_golden_set passes from an installed
-# wheel (the fivedrisk.tests package itself is packaged).
-fivedrisk = ["*.yaml", "fixtures/**/*", "policies/presets/*.yaml", "tests/golden_set/*.json"]
+fivedrisk = ["py.typed", "*.yaml", "fixtures/**/*", "policies/presets/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["fivedrisk/tests"]
@@ -67,6 +67,7 @@ testpaths = ["fivedrisk/tests"]
 # pytest 9.x (exit-2 collection error) for no benefit. Re-add both together only if
 # a real `async def test_*` / @pytest.mark.asyncio test is introduced.
 markers = [
+    "acceptance: acceptance-corpus and release-gate coverage",
     "llm01_prompt_injection: tests covering OWASP LLM01 (Prompt Injection)",
     "llm02_insecure_output: tests covering OWASP LLM02 (Insecure Output Handling)",
     "llm04_model_dos: tests covering OWASP LLM04 (Model Denial of Service)",

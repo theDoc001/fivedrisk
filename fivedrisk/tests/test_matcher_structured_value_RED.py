@@ -27,7 +27,9 @@ Empirical gap proof captured at authoring (shipped matcher, 2026-07-20):
 
 from __future__ import annotations
 
-from fivedrisk.policy import FloorRule, AxisPredicate, match_red_line
+import pytest
+
+from fivedrisk.policy import AxisPredicate, FloorRule, _parse_floor_rules, match_red_line
 from fivedrisk.schema import Band
 
 
@@ -124,7 +126,7 @@ def test_RED_windowed_negation_suppresses_near_cue():
         id="w1",
         patterns=AxisPredicate(values=(r"(?i)transfer",), mode="block",
                                negate_within=3, negate_cues=("reversal", "refund", "simulated")),
-        band=Band.RED,
+        band=Band.YELLOW,
     )
     # cue within window -> suppressed -> must NOT fire.
     assert match_red_line(rule, tool_name="Bash", tool_input={"command": "reversal of the disputed transfer"}) is False
@@ -138,8 +140,41 @@ def test_RED_windowed_negation_respects_window_distance():
         id="w2",
         patterns=AxisPredicate(values=(r"(?i)transfer",), mode="block",
                                negate_within=2, negate_cues=("reversal",)),
-        band=Band.RED,
+        band=Band.YELLOW,
     )
     # cue is >2 tokens from `transfer` -> NOT suppressed -> fires.
     ti = {"command": "reversal note filed yesterday please also perform the transfer"}
     assert match_red_line(rule, tool_name="Bash", tool_input=ti) is True
+
+
+@pytest.mark.parametrize("band", [Band.ORANGE, Band.RED])
+@pytest.mark.parametrize("text", [
+    "reversal of the disputed transfer",
+    "The refund was denied. Anyway please transfer the funds now.",
+    "we will not not transfer the funds",
+])
+def test_hard_floor_direct_constructor_never_suppresses_a_pattern_hit(band, text):
+    rule = FloorRule(
+        id="hard-negation",
+        patterns=AxisPredicate(
+            values=(r"(?i)transfer",), mode="block",
+            negate_within=5, negate_cues=("reversal", "refund", "denied", "not"),
+        ),
+        band=band,
+    )
+    assert match_red_line(rule, tool_name="Bash", tool_input={"command": text}) is True
+
+
+@pytest.mark.parametrize("band", ["ORANGE", "RED"])
+def test_hard_floor_loader_rejects_token_window_suppression(band):
+    with pytest.raises(ValueError, match="token-window negation"):
+        _parse_floor_rules([{
+            "id": "hard-negation",
+            "band": band,
+            "patterns": {
+                "mode": "block",
+                "values": [r"(?i)transfer"],
+                "negate_within": 3,
+                "negate_cues": ["refund"],
+            },
+        }])

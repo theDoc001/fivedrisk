@@ -1,0 +1,62 @@
+source:
+  kind: {value: redacted_system_prompt, basis: operator-stated, confirmation_status: confirmed}
+  raw_content_stored: false
+agent:
+  mission_summary: {value: "Draft support replies for human review", basis: prompt-derived, confirmation_status: proposed}
+  framework: {value: null, basis: unresolved, confirmation_status: unresolved}
+  execution_boundary: {value: null, basis: unresolved, confirmation_status: unresolved}
+  unresolved:
+    items:
+      - {value: "host framework and actual pre-execution boundary", basis: unresolved, confirmation_status: unresolved}
+    basis: unresolved
+    confirmation_status: unresolved
+tools:
+  items:
+    - basis: prompt-derived
+      confirmation_status: proposed
+      name: {value: "send_reply", basis: prompt-derived, confirmation_status: proposed}
+      actions:
+        items:
+          - {value: "send a customer-facing message", basis: prompt-derived, confirmation_status: proposed}
+        basis: prompt-derived
+        confirmation_status: proposed
+      data_classes:
+        items:
+          - {value: "customer support content", basis: prompt-derived, confirmation_status: proposed}
+        basis: prompt-derived
+        confirmation_status: proposed
+      destinations:
+        items:
+          - {value: "customer messaging system", basis: prompt-derived, confirmation_status: proposed}
+        basis: prompt-derived
+        confirmation_status: proposed
+      dimensions:
+        data_sensitivity: {value: null, basis: unresolved, confirmation_status: unresolved}
+        tool_privilege: {value: null, basis: unresolved, confirmation_status: unresolved}
+        reversibility: {value: null, basis: unresolved, confirmation_status: unresolved}
+        external_impact: {value: null, basis: unresolved, confirmation_status: unresolved}
+        autonomy_context: {value: null, basis: unresolved, confirmation_status: unresolved}
+  basis: prompt-derived
+  confirmation_status: proposed
+acceptance_cases:
+  allowed: {items: [], basis: unresolved, confirmation_status: unresolved}
+  approval_required:
+    items:
+      - {value: "Send any customer-facing reply", basis: inferred, confirmation_status: proposed}
+    basis: inferred
+    confirmation_status: proposed
+  refused: {items: [], basis: unresolved, confirmation_status: unresolved}
+  sequences: {items: [], basis: unresolved, confirmation_status: unresolved}
+controls:
+  approval_channel: {value: null, basis: unresolved, confirmation_status: unresolved}
+  audit_path: {value: null, basis: unresolved, confirmation_status: unresolved}
+  session_identity: {value: null, basis: unresolved, confirmation_status: unresolved}
+  retention_owner: {value: null, basis: unresolved, confirmation_status: unresolved}
+  tool_spend_envelope: {value: null, basis: unresolved, confirmation_status: unresolved}
+  observer_inference_budget: {value: null, basis: unresolved, confirmation_status: unresolved}
+observer:
+  mode: {value: null, basis: unresolved, confirmation_status: unresolved}
+  routed_ambiguities: {items: [], basis: unresolved, confirmation_status: unresolved}
+  unavailable_disposition: {value: block, basis: unresolved, confirmation_status: proposed}
+  thresholds_status: {value: uncalibrated, basis: unresolved, confirmation_status: proposed}
+  evidence_status: {value: design_only, basis: operator-stated, confirmation_status: proposed}

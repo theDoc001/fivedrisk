@@ -292,9 +292,13 @@ class Action:
     acting_identity: Optional["ActingIdentity"] = None
 
     def __post_init__(self) -> None:
+        if type(self.tool_name) is not str or not self.tool_name.strip():
+            raise ValueError("tool_name must be a non-empty string")
+        if type(self.tool_input) is not dict:
+            raise TypeError("tool_input must be a dictionary")
         for dim_name in DIMENSION_NAMES:
             val = getattr(self, dim_name)
-            if not isinstance(val, int) or not (DIM_MIN <= val <= DIM_MAX):
+            if type(val) is not int or not (DIM_MIN <= val <= DIM_MAX):
                 raise ValueError(
                     f"{dim_name} must be int in [{DIM_MIN}, {DIM_MAX}], got {val!r}"
                 )
@@ -394,7 +398,7 @@ class ScoredAction:
 class HITLCard:
     """Human-in-the-loop intervention card per governance spec v0.3 §15.4.
 
-    Rendered as a Discord embed. Progressive disclosure:
+    Rendered by the host approval UI. Progressive disclosure:
     - Default: summary + recommendation + actions
     - Expanded: full 5D score, chain-of-thought, prior decisions
     - Memory: "Remember for this project" / "Remember for all projects"

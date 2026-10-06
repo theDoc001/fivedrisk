@@ -71,13 +71,16 @@ graph.add_conditional_edges("fivedrisk_gate", route_by_band,
 
 ## Claude Code (CLI hooks)
 
-Wire in `.claude/settings.json` — PreToolUse gates, PostToolUse verifies output:
+Resolve the selected interpreter first. Replace `<SELECTED_PYTHON>` below with the
+absolute value printed by `"$PYTHON_BIN" -c "import sys; print(sys.executable)"` before
+using the configuration. Wire in `.claude/settings.json`: PreToolUse gates and
+PostToolUse verifies output.
 
 ```json
 {
   "hooks": {
-    "PreToolUse":  [{ "matcher": "*", "hooks": [{ "type": "command", "command": "python -m fivedrisk claude-hook" }] }],
-    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "python -m fivedrisk claude-hook" }] }]
+    "PreToolUse":  [{ "matcher": "*", "hooks": [{ "type": "command", "command": "\"<SELECTED_PYTHON>\" -I -m fivedrisk._bootstrap claude-hook" }] }],
+    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "\"<SELECTED_PYTHON>\" -I -m fivedrisk._bootstrap claude-hook" }] }]
   }
 }
 ```
@@ -87,17 +90,27 @@ ORANGE maps to Claude Code's native `ask` (human approval); RED → `deny`.
 ## Vercel AI SDK / Genkit (Node)
 
 ```bash
-npm install fivedrisk-gateway   # Python side: pip install fivedrisk
+npm install fivedrisk-gateway
+"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+PYTHON_BIN="$PYTHON_BIN" bash "$SKILL_ROOT/scripts/verify-install.sh"
 ```
 
 ```ts
 import { FivedriskGateway, guardVercelTool, guardGenkitTool } from "fivedrisk-gateway";
-const gw = new FivedriskGateway();                       // spawns `python -m fivedrisk gateway stdio`
+const gw = new FivedriskGateway({ command: "<SELECTED_PYTHON>" });
 const gatedTool = guardVercelTool(gw, "write_to_database", tool);           // Vercel AI SDK
 // Genkit:  ai.defineTool({name}, guardGenkitTool(gw, "write_to_database", handler));
 ```
 
 ## Anything else — the `@gate` decorator
+
+`@gate` accepts detached exact built-in action data only: `None`, booleans,
+integers, finite floats, strings, lists, tuples, and string-keyed dictionaries.
+Convert paths, dataclasses, framework objects, and other custom values before the
+call; unsupported values block before the wrapped function runs. Instance and
+class methods are not supported because their receiver is a custom object; gate a
+static or free data-only boundary function instead. A Bash gate accepts only one
+exact built-in string in its `command` parameter, never an argv list or tuple.
 
 ```python
 from fivedrisk.hooks import gate
@@ -113,7 +126,7 @@ Point any adapter at a policy (`make_*(policy=...)`, `@gate` reads `configure(po
 or set `FIVEDRISK_POLICY_PATH`). Start from a shipped preset, validate, then hand-tune:
 
 ```bash
-python3 -m fivedrisk validate your-policy.yaml
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap validate your-policy.yaml
 ```
 
 Key knobs: `tool_defaults` (per-tool dimension scores), `bash_overrides` (regex floors for

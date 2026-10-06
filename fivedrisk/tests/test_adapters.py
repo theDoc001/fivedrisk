@@ -87,7 +87,7 @@ class TestToVerdict:
         v = to_verdict(None, {"x": 1})
         assert v.sentinel == BLOCK
         assert v.blocked is True
-        assert v.error == "tool_name is required"
+        assert v.error == "tool_name must be a non-empty string"
 
     def test_bad_tool_input_fails_closed(self):
         v = to_verdict("Bash", "not-a-dict")  # type: ignore[arg-type]
