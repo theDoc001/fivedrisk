@@ -133,7 +133,7 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
 
       - name: Select only missing PyPI files
-        if: steps.state.outputs.pypi != 'matching-complete'
+        if: steps.metadata.outputs.version != '' && steps.state.outputs.pypi != 'matching-complete'
         env:
           MISSING: ${{ steps.state.outputs.missing_pypi }}
         run: |
@@ -144,11 +144,11 @@ jobs:
           IFS=$old_ifs
 
       - name: Recheck immediately before PyPI mutation
-        if: steps.state.outputs.pypi != 'matching-complete'
+        if: steps.metadata.outputs.version != '' && steps.state.outputs.pypi != 'matching-complete'
         run: python -I tools/release_window.py --action package-publish
 
       - name: Publish only missing, attested package files
-        if: steps.state.outputs.pypi != 'matching-complete'
+        if: steps.metadata.outputs.version != '' && steps.state.outputs.pypi != 'matching-complete'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: publish-dist
