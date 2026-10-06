@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -137,4 +138,7 @@ def test_every_shipped_gate_invocation_uses_isolated_python():
             and "grep -F" not in line
         ]
         assert gate_lines
-        assert all("python -I tools/release_window.py" in line for line in gate_lines)
+        assert all(
+            re.search(r"python3? -I tools/release_window.py", line)
+            for line in gate_lines
+        )

@@ -4,7 +4,6 @@ on:
   schedule:
     - cron: "5 17 * * *"
     - cron: "5 18 * * *"
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -25,7 +24,7 @@ jobs:
         if: github.event_name == 'schedule'
         run: |
           set +e
-          python -I tools/release_window.py --action workflow-dispatch --scheduled-expression '${{ github.event.schedule }}'
+          python3 -I tools/release_window.py --action workflow-dispatch --scheduled-expression '${{ github.event.schedule }}'
           status=$?
           set -e
           if [ "$status" -eq 0 ]; then
@@ -36,22 +35,25 @@ jobs:
             exit "$status"
           fi
 
-      - name: Validate manual dispatch window
-        if: github.event_name == 'workflow_dispatch'
-        run: python -I tools/release_window.py --action workflow-dispatch
-
       - id: metadata
-        name: Bind publication to the independently cleared commit
-        if: github.event_name == 'workflow_dispatch' || steps.slot.outputs.active == 'true'
+        name: Bind merged main to the independently cleared tree
+        if: steps.slot.outputs.active == 'true'
         env:
           RELEASE_CANDIDATE_SHA: ${{ vars.FIVEDRISK_RELEASE_CANDIDATE_SHA }}
           QA_VERDICT_SHA: ${{ vars.FIVEDRISK_QA_VERDICT_SHA }}
+          RELEASE_CANDIDATE_TREE: ${{ vars.FIVEDRISK_RELEASE_CANDIDATE_TREE }}
+          QA_VERDICT_TREE: ${{ vars.FIVEDRISK_QA_VERDICT_TREE }}
         run: |
+          test "$GITHUB_EVENT_NAME" = 'schedule'
+          test "$GITHUB_REF" = 'refs/heads/main'
           test -n "$RELEASE_CANDIDATE_SHA"
           test -n "$QA_VERDICT_SHA"
-          test "$RELEASE_CANDIDATE_SHA" = "$GITHUB_SHA"
-          test "$QA_VERDICT_SHA" = "$GITHUB_SHA"
-          version=$(python -I -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          test -n "$RELEASE_CANDIDATE_TREE"
+          test -n "$QA_VERDICT_TREE"
+          test "$RELEASE_CANDIDATE_SHA" = "$QA_VERDICT_SHA"
+          test "$RELEASE_CANDIDATE_TREE" = "$QA_VERDICT_TREE"
+          test "$RELEASE_CANDIDATE_TREE" = "$(git rev-parse "$GITHUB_SHA^{tree}")"
+          version=$(python3 -I -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           test "$version" = '0.7.1'
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
+import textwrap
 from pathlib import Path
 
 from fivedrisk.cli import (
@@ -38,6 +41,25 @@ def _public_instruction_files() -> list[Path]:
 
 def _markdown_fences(text: str, language: str) -> list[str]:
     return re.findall(rf"```{language}\s*\n(.*?)```", text, re.DOTALL)
+
+
+def _workflow_run_block(workflow: str, step_name: str) -> str:
+    lines = workflow.splitlines()
+    name_index = next(
+        index for index, line in enumerate(lines) if line.strip() == f"name: {step_name}"
+    )
+    run_index = next(
+        index
+        for index in range(name_index + 1, len(lines))
+        if lines[index].strip() == "run: |"
+    )
+    indent = len(lines[run_index]) - len(lines[run_index].lstrip())
+    body: list[str] = []
+    for line in lines[run_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip()) <= indent:
+            break
+        body.append(line)
+    return textwrap.dedent("\n".join(body))
 
 
 def test_every_public_install_workflow_verifies_provenance_first():
@@ -209,13 +231,14 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     assert "--force" not in combined
     assert 'cron: "5 17 * * *"' in publish
     assert 'cron: "5 18 * * *"' in publish
+    assert "workflow_dispatch" not in publish
     assert "steps.slot.outputs.active == 'true'" in publish
     assert 'elif [ "$status" -eq 3 ]' in publish
     assert publish.count(
         "steps.metadata.outputs.version != '' && steps.state.outputs.pypi != 'matching-complete'"
     ) == 3
     assert "python -I tools/release_window.py" in gate
-    assert "python -I tools/release_window.py" in publish
+    assert "python3 -I tools/release_window.py" in publish
     assert "npm run test:release" in publish
     assert "build==1.5.0" in publish
     assert "setuptools==82.0.1" in publish
@@ -238,3 +261,73 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     )
     assert "FIVEDRISK_RELEASE_CANDIDATE_SHA" in publish
     assert "FIVEDRISK_QA_VERDICT_SHA" in publish
+    assert "FIVEDRISK_RELEASE_CANDIDATE_TREE" in publish
+    assert "FIVEDRISK_QA_VERDICT_TREE" in publish
+    assert 'test "$GITHUB_EVENT_NAME" = \'schedule\'' in publish
+    assert 'test "$GITHUB_REF" = \'refs/heads/main\'' in publish
+    assert 'test "$RELEASE_CANDIDATE_SHA" = "$QA_VERDICT_SHA"' in publish
+    assert 'test "$RELEASE_CANDIDATE_TREE" = "$QA_VERDICT_TREE"' in publish
+    assert (
+        'test "$RELEASE_CANDIDATE_TREE" = "$(git rev-parse '
+        '\"$GITHUB_SHA^{tree}\")"'
+    ) in publish
+
+
+def test_publish_metadata_gate_accepts_only_the_cleared_main_tree(tmp_path):
+    publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text(
+        encoding="utf-8"
+    )
+    script = _workflow_run_block(
+        publish, "Bind merged main to the independently cleared tree"
+    )
+    tree = subprocess.run(
+        ("git", "rev-parse", "HEAD^{tree}"),
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    base = os.environ.copy()
+    base.update(
+        {
+            "GITHUB_EVENT_NAME": "schedule",
+            "GITHUB_REF": "refs/heads/main",
+            "GITHUB_SHA": "HEAD",
+            "GITHUB_OUTPUT": str(tmp_path / "output"),
+            "GITHUB_ENV": str(tmp_path / "environment"),
+            "RELEASE_CANDIDATE_SHA": "qa-subject",
+            "QA_VERDICT_SHA": "qa-subject",
+            "RELEASE_CANDIDATE_TREE": tree,
+            "QA_VERDICT_TREE": tree,
+        }
+    )
+
+    accepted = subprocess.run(
+        ("bash", "-eu", "-o", "pipefail", "-c", script),
+        cwd=ROOT,
+        env=base,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert accepted.returncode == 0, accepted.stderr
+
+    for key, value in (
+        ("QA_VERDICT_TREE", ""),
+        ("RELEASE_CANDIDATE_TREE", "0" * 40),
+        ("GITHUB_EVENT_NAME", "workflow_dispatch"),
+        ("GITHUB_REF", "refs/heads/release/0.7.1"),
+    ):
+        denied_environment = base | {key: value}
+        denied_environment["GITHUB_OUTPUT"] = str(tmp_path / f"denied-{key}")
+        denied_environment["GITHUB_ENV"] = str(tmp_path / f"denied-env-{key}")
+        denied = subprocess.run(
+            ("bash", "-eu", "-o", "pipefail", "-c", script),
+            cwd=ROOT,
+            env=denied_environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert denied.returncode != 0, key
+        assert not Path(denied_environment["GITHUB_OUTPUT"]).exists(), key
