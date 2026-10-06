@@ -8,10 +8,12 @@ These instructions apply to the entire repository.
 Local editing, commits, builds, and tests may run at any time.
 
 Before a publication task, verify `git config --get core.hooksPath` prints exactly
-`.githooks`. If it does not, stop and run `git config core.hooksPath .githooks` before
-continuing. The tracked hook is a required local control, not an optional convenience.
+`.githooks`. On a fresh clone, run
+`python3 -I tools/install_release_controls.py`, then
+`python3 -I tools/install_release_controls.py --check`. The tracked hook is a required
+local control, not an optional convenience.
 
-Before every external mutation, run `python tools/release_window.py --action <action>`
+Before every external mutation, run `python3 -I tools/release_window.py --action <action>`
 from the repository root and proceed only when it exits 0. Use one of the action names
 accepted by the command. External mutations include:
 
@@ -30,4 +32,5 @@ before each external mutation.
 
 An open window permits timing only. It does not replace release approval, required
 tests, repository protections, or other release checks. Fail closed when any required
-check is missing or disagrees.
+check is missing or disagrees. The repository rulesets described in
+`docs/release-controls.md` are mandatory for the protected branch and release tags.

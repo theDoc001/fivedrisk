@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Audit external mutation time
-        run: python tools/release_window.py --action push
+        run: python -I tools/release_window.py --action push
 
   hook-contract:
     name: hook-contract
@@ -29,4 +29,4 @@ jobs:
         run: |
           test -x .githooks/pre-push
           test -f tools/release_window.py
-          grep -F 'tools/release_window.py' .githooks/pre-push
+          grep -F 'python3 -I "$gate" --action push' .githooks/pre-push

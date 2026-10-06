@@ -172,7 +172,7 @@ def test_agent_instructions_route_every_publication_class_to_one_gate():
     instructions = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     required = (
         "entire repository",
-        "tools/release_window.py",
+        "python3 -I tools/release_window.py",
         "Europe/Tirane",
         "19:00 inclusive through 07:00 exclusive",
         "pushing any branch or tag",
@@ -182,7 +182,7 @@ def test_agent_instructions_route_every_publication_class_to_one_gate():
         "workflow",
         "--no-verify",
         "git config --get core.hooksPath",
-        "git config core.hooksPath .githooks",
+        "tools/install_release_controls.py",
     )
     for phrase in required:
         assert phrase in instructions
@@ -201,11 +201,19 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     assert 'cron: "5 18 * * *"' in publish
     assert "steps.slot.outputs.active == 'true'" in publish
     assert 'elif [ "$status" -eq 3 ]' in publish
+    assert "python -I tools/release_window.py" in gate
+    assert "python -I tools/release_window.py" in publish
+    assert "npm run test:release" in publish
     assert publish.index("--action package-publish") < publish.index(
         "pypa/gh-action-pypi-publish"
     )
     assert publish.index("--action tag") < publish.index('git push origin "v$VERSION"')
     assert publish.index("--action github-release") < publish.index("gh release create")
-    assert publish.index("publish-pypi:") < publish.index("github-release:")
+    assert publish.index("pypa/gh-action-pypi-publish") < publish.index(
+        'git push origin "v$VERSION"'
+    )
+    assert publish.index('git push origin "v$VERSION"') < publish.index(
+        "gh release create"
+    )
     assert "FIVEDRISK_RELEASE_CANDIDATE_SHA" in publish
     assert "FIVEDRISK_QA_VERDICT_SHA" in publish

@@ -64,6 +64,8 @@ docs/*
 # this to docs/** is how a private draft gets published, and leaving it out is how a README
 # link 404s, which has already happened twice.
 !docs/audit-trail.md
+# Exception: public operator contract for the time-gated release path.
+!docs/release-controls.md
 # Exception: FOUR spec docs ship, each re-included by name below. The rest of
 # docs/spec/ (private governance/schema drafts) stays private — do NOT broaden
 # this to docs/spec/** or those private drafts would be published.

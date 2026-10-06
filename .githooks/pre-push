@@ -9,4 +9,4 @@ if [ ! -f "$gate" ]; then
   exit 2
 fi
 
-exec python3 "$gate" --action push
+exec python3 -I "$gate" --action push

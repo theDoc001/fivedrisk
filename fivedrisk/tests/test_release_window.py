@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import datetime as dt
 import importlib.util
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -100,3 +102,39 @@ def test_inactive_dst_schedule_is_a_clean_noop(monkeypatch: pytest.MonkeyPatch):
     assert release_window.main(
         ["--action", "workflow-dispatch", "--scheduled-expression", "5 18 * * *"]
     ) == 3
+
+
+def test_documented_gate_command_ignores_hostile_pythonpath(tmp_path: Path):
+    (tmp_path / "zoneinfo.py").write_text(
+        "raise RuntimeError('hostile PYTHONPATH module loaded')\n", encoding="utf-8"
+    )
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(tmp_path)
+    result = subprocess.run(
+        [sys.executable, "-I", "tools/release_window.py", "--help"],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "hostile PYTHONPATH" not in result.stderr
+
+
+def test_every_shipped_gate_invocation_uses_isolated_python():
+    hook = (ROOT / ".githooks" / "pre-push").read_text(encoding="utf-8")
+    assert 'python3 -I "$gate" --action push' in hook
+    for workflow_name in ("release-gate.yml", "publish.yml"):
+        workflow = (ROOT / ".github" / "workflows" / workflow_name).read_text(
+            encoding="utf-8"
+        )
+        gate_lines = [
+            line.strip()
+            for line in workflow.splitlines()
+            if "tools/release_window.py" in line
+            and "python" in line
+            and "grep -F" not in line
+        ]
+        assert gate_lines
+        assert all("python -I tools/release_window.py" in line for line in gate_lines)
