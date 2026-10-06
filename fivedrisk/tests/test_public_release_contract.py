@@ -197,6 +197,8 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     assert "--force" not in combined
     assert 'cron: "5 17 * * *"' in publish
     assert 'cron: "5 18 * * *"' in publish
+    assert "steps.slot.outputs.active == 'true'" in publish
+    assert 'elif [ "$status" -eq 3 ]' in publish
     assert publish.index("--action package-publish") < publish.index(
         "pypa/gh-action-pypi-publish"
     )

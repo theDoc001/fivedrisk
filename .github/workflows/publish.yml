@@ -18,17 +18,31 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      - name: Validate scheduled DST slot
+      - id: slot
+        name: Select the active Europe/Tirane DST slot
         if: github.event_name == 'schedule'
-        run: python tools/release_window.py --action workflow-dispatch --scheduled-expression '${{ github.event.schedule }}'
+        run: |
+          set +e
+          python tools/release_window.py --action workflow-dispatch --scheduled-expression '${{ github.event.schedule }}'
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo 'active=true' >> "$GITHUB_OUTPUT"
+          elif [ "$status" -eq 3 ]; then
+            echo 'active=false' >> "$GITHUB_OUTPUT"
+          else
+            exit "$status"
+          fi
       - name: Validate manual dispatch window
         if: github.event_name == 'workflow_dispatch'
         run: python tools/release_window.py --action workflow-dispatch
       - id: version
+        if: github.event_name == 'workflow_dispatch' || steps.slot.outputs.active == 'true'
         run: |
           version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - id: candidate
+        if: github.event_name == 'workflow_dispatch' || steps.slot.outputs.active == 'true'
         name: Bind publication to the independently cleared commit and remote state
         env:
           GH_TOKEN: ${{ github.token }}

@@ -118,8 +118,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.scheduled_expression and not scheduled_slot_matches(
             args.scheduled_expression, decision.local_time
         ):
-            print("DENY: inactive Europe/Tirane DST schedule slot", file=sys.stderr)
-            return 2
+            print("INACTIVE: alternate Europe/Tirane DST schedule slot")
+            return 3
     except ReleaseWindowError as exc:
         print(f"DENY: release-window gate failed closed: {exc}", file=sys.stderr)
         return 2
