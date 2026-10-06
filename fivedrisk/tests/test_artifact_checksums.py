@@ -40,3 +40,15 @@ def test_manifest_rejects_changes_and_unsafe_paths(tmp_path: Path):
     manifest.write_text("0" * 64 + "  ../escape\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="unsafe"):
         artifact_checksums.verify_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("relative", ["..\\escape", "nested//file", "nested/./file"])
+def test_manifest_rejects_nonportable_path_spellings(tmp_path: Path, relative: str):
+    (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / relative).write_text("x", encoding="utf-8")
+    (tmp_path / "SHA256SUMS").write_text(
+        artifact_checksums.digest(tmp_path / relative) + f"  {relative}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="unsafe"):
+        artifact_checksums.verify_manifest(tmp_path)

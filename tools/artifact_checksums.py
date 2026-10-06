@@ -6,10 +6,25 @@ from __future__ import annotations
 import argparse
 import hashlib
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 MANIFEST_NAME = "SHA256SUMS"
+
+
+def _portable_path(relative: str) -> PurePosixPath:
+    parts = relative.split("/")
+    candidate = PurePosixPath(relative)
+    if (
+        not relative
+        or "\\" in relative
+        or relative.startswith("/")
+        or any(part in {"", ".", ".."} for part in parts)
+        or candidate.as_posix() != relative
+        or relative == MANIFEST_NAME
+    ):
+        raise RuntimeError(f"unsafe manifest path: {relative}")
+    return candidate
 
 
 def digest(path: Path) -> str:
@@ -31,7 +46,11 @@ def files(root: Path) -> list[Path]:
 def write_manifest(root: Path) -> Path:
     root = root.resolve(strict=True)
     manifest = root / MANIFEST_NAME
-    lines = [f"{digest(path)}  {path.relative_to(root).as_posix()}" for path in files(root)]
+    lines = []
+    for path in files(root):
+        relative = path.relative_to(root).as_posix()
+        _portable_path(relative)
+        lines.append(f"{digest(path)}  {relative}")
     manifest.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
     return manifest
 
@@ -49,10 +68,10 @@ def verify_manifest(root: Path) -> None:
             raise RuntimeError(f"invalid manifest line {number}") from exc
         if len(expected) != 64 or any(ch not in "0123456789abcdef" for ch in expected):
             raise RuntimeError(f"invalid SHA-256 on manifest line {number}")
-        candidate = Path(relative)
-        if candidate.is_absolute() or ".." in candidate.parts or relative == MANIFEST_NAME:
-            raise RuntimeError(f"unsafe manifest path on line {number}")
-        normalized = candidate.as_posix()
+        try:
+            normalized = _portable_path(relative).as_posix()
+        except RuntimeError as exc:
+            raise RuntimeError(f"unsafe manifest path on line {number}") from exc
         if normalized in declared:
             raise RuntimeError(f"duplicate manifest path: {normalized}")
         declared[normalized] = expected

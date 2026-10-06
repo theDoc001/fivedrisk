@@ -32,6 +32,39 @@ def _validate_archive_path(path: PurePosixPath) -> None:
         raise RuntimeError(f"unsafe plugin archive path: {rendered}")
 
 
+def _validate_raw_tar_name(name: str, *, directory: bool) -> None:
+    if "\\" in name or name.startswith("/"):
+        raise RuntimeError(f"unsafe plugin archive path: {name}")
+    parts = name.split("/")
+    if directory and parts and parts[-1] == "":
+        parts.pop()
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise RuntimeError(f"unsafe plugin archive path: {name}")
+
+
+def _validate_tar_envelope(payload: bytes) -> None:
+    block_size = 512
+    zero = b"\0" * block_size
+    if len(payload) < block_size * 2 or len(payload) % block_size:
+        raise RuntimeError("invalid Git TAR framing")
+    offset = 0
+    while offset + block_size * 2 <= len(payload):
+        header = payload[offset : offset + block_size]
+        if header == zero:
+            if payload[offset + block_size : offset + block_size * 2] != zero:
+                raise RuntimeError("invalid Git TAR end marker")
+            if any(payload[offset + block_size * 2 :]):
+                raise RuntimeError("nonzero data follows the Git TAR end marker")
+            return
+        raw_size = header[124:136].rstrip(b"\0 ").lstrip(b" ") or b"0"
+        try:
+            size = int(raw_size, 8)
+        except ValueError as exc:
+            raise RuntimeError("invalid Git TAR size field") from exc
+        offset += block_size + ((size + block_size - 1) // block_size) * block_size
+    raise RuntimeError("missing Git TAR end marker")
+
+
 def _zip_time(epoch: int) -> tuple[int, int, int, int, int, int]:
     if epoch < 0:
         raise RuntimeError("SOURCE_DATE_EPOCH must be non-negative")
@@ -169,11 +202,11 @@ def _tar_entries(
     modes: dict[PurePosixPath, int],
 ) -> list[Entry]:
     entries: dict[PurePosixPath, Entry] = {}
+    _validate_tar_envelope(payload)
     try:
         with tarfile.open(fileobj=io.BytesIO(payload), mode="r:") as archive:
             for member in archive:
-                if "\\" in member.name:
-                    raise RuntimeError(f"unsafe plugin archive path: {member.name}")
+                _validate_raw_tar_name(member.name, directory=member.isdir())
                 raw = PurePosixPath(member.name)
                 if raw.is_absolute() or ".." in raw.parts:
                     raise RuntimeError(f"unsafe plugin archive path: {member.name}")

@@ -166,3 +166,50 @@ def test_tar_reader_rejects_traversal_before_destination_replacement(tmp_path: P
         )
         build_plugin_archive._write_zip(entries, destination, 1_800_000_000)
     assert destination.read_bytes() == b"keep"
+
+
+@pytest.mark.parametrize(
+    "member_name", ["fivedrisk-plugin/./plugin.json", "fivedrisk-plugin//plugin.json"]
+)
+def test_tar_reader_rejects_noncanonical_member_names(member_name: str):
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w") as archive:
+        member = tarfile.TarInfo(member_name)
+        member.size = 2
+        archive.addfile(member, io.BytesIO(b"{}"))
+    modes = {PurePosixPath("fivedrisk-plugin/plugin.json"): 0o644}
+    with pytest.raises(RuntimeError, match="unsafe plugin archive path"):
+        build_plugin_archive._tar_entries(
+            payload.getvalue(), PurePosixPath("fivedrisk-plugin"), modes
+        )
+
+
+def test_tar_reader_rejects_trailing_garbage_and_truncation():
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w") as archive:
+        member = tarfile.TarInfo("fivedrisk-plugin/plugin.json")
+        member.size = 2
+        archive.addfile(member, io.BytesIO(b"{}"))
+    valid = payload.getvalue()
+    modes = {PurePosixPath("fivedrisk-plugin/plugin.json"): 0o644}
+    assert build_plugin_archive._tar_entries(
+        valid, PurePosixPath("fivedrisk-plugin"), modes
+    )
+    for malformed in (valid + b"JUNK", valid[:-1]):
+        with pytest.raises(RuntimeError, match="Git TAR"):
+            build_plugin_archive._tar_entries(
+                malformed, PurePosixPath("fivedrisk-plugin"), modes
+            )
+
+    marker = next(
+        offset
+        for offset in range(0, len(valid), 512)
+        if valid[offset : offset + 1024] == b"\0" * 1024
+    )
+    garbage_after_marker = (
+        valid[: marker + 1024] + b"JUNK" + b"\0" * (len(valid) - marker - 1028)
+    )
+    with pytest.raises(RuntimeError, match="follows the Git TAR end marker"):
+        build_plugin_archive._tar_entries(
+            garbage_after_marker, PurePosixPath("fivedrisk-plugin"), modes
+        )
