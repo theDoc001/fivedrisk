@@ -204,6 +204,14 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     assert "python -I tools/release_window.py" in gate
     assert "python -I tools/release_window.py" in publish
     assert "npm run test:release" in publish
+    assert "build==1.5.0" in publish
+    assert "setuptools==82.0.1" in publish
+    assert "wheel==0.47.0" in publish
+    assert "python -m build --no-isolation" in publish
+    assert "tools/normalize_sdist.py" in publish
+    assert "tools/build_plugin_archive.py" in publish
+    assert '--git-ref "$GITHUB_SHA"' in publish
+    assert "actions/attest-build-provenance@v2" in publish
     assert publish.index("--action package-publish") < publish.index(
         "pypa/gh-action-pypi-publish"
     )

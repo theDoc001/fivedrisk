@@ -71,7 +71,10 @@ jobs:
 
       - name: Install release tooling and package
         if: steps.metadata.outputs.version != ''
-        run: python -m pip install --disable-pip-version-check ".[langgraph,dev]" build twine
+        run: |
+          python -m pip install --disable-pip-version-check ".[langgraph,dev]"
+          python -m pip install --disable-pip-version-check \
+            build==1.5.0 setuptools==82.0.1 twine==6.2.0 wheel==0.47.0
 
       - name: Run Python release checks
         if: steps.metadata.outputs.version != ''
@@ -100,10 +103,13 @@ jobs:
       - name: Build one reproducible, checksum-verified artifact set
         if: steps.metadata.outputs.version != ''
         run: |
-          python -m build
+          python -m build --no-isolation
           python -I tools/normalize_sdist.py dist/fivedrisk-*.tar.gz
           python -m twine check dist/*
           python -I tools/verify_wheel.py dist/fivedrisk-*.whl
+          python -I tools/build_plugin_archive.py \
+            --git-ref "$GITHUB_SHA" \
+            --output "dist/fivedrisk-plugin-${{ steps.metadata.outputs.version }}.zip"
           python -I tools/artifact_checksums.py --write dist
           python -I tools/artifact_checksums.py --verify dist
 

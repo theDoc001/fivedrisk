@@ -48,7 +48,13 @@ def expected_artifacts(dist: Path) -> tuple[dict[str, str], dict[str, str]]:
     if len(package_paths) != 2:
         raise ReleaseStateError("expected exactly one wheel and one source distribution")
     package = {path.name: digest(path) for path in package_paths}
-    release = dict(package)
+    release = {
+        path.name: digest(path)
+        for path in sorted(dist.iterdir())
+        if path.is_file() and path.name != MANIFEST_NAME
+    }
+    if not any(name.startswith("fivedrisk-plugin-") and name.endswith(".zip") for name in release):
+        raise ReleaseStateError("expected one versioned fivedrisk plugin ZIP")
     release[MANIFEST_NAME] = digest(dist / MANIFEST_NAME)
     return package, release
 
