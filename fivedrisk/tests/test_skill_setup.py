@@ -400,6 +400,7 @@ def test_runtime_policy_compilation_requires_confirmation_and_supported_fields()
 def test_skill_carries_one_selected_interpreter_through_complete_instruction_tree():
     text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     assert "PYTHON_BIN=.venv/bin/python" in text
+    assert 'PYTHON_BIN="$("$PYTHON_BIN" -I -c \'import sys; print(sys.executable)\')"' in text
     assert 'PYTHON_BIN="$PYTHON_BIN" bash "$SKILL_ROOT/scripts/verify-install.sh"' in text
     assert _unpinned_commands(SKILL) == []
 

@@ -168,6 +168,16 @@ def test_plugin_auto_discovers_only_the_consultant_skill():
     assert "data sensitivity: 1.0" not in shipped_text
 
 
+def test_typescript_readme_exports_a_canonical_absolute_interpreter():
+    readme = (ROOT / "clients" / "typescript" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    canonicalize = 'PYTHON_BIN="$("$PYTHON_BIN" -I -c \'import sys; print(sys.executable)\')"'
+    assert readme.index(canonicalize) < readme.index(
+        'export FIVEDRISK_PYTHON="$PYTHON_BIN"'
+    )
+
+
 def test_agent_instructions_route_every_publication_class_to_one_gate():
     instructions = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     required = (

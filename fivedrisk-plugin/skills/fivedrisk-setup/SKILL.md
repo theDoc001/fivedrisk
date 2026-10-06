@@ -88,6 +88,7 @@ rather than assuming the shell's `python3` is the same environment:
 
 ```bash
 PYTHON_BIN=.venv/bin/python
+PYTHON_BIN="$("$PYTHON_BIN" -I -c 'import sys; print(sys.executable)')"
 export PYTHON_BIN
 "$PYTHON_BIN" -c "import sys; print(sys.executable)"
 ```
