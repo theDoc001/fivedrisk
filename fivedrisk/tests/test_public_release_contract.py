@@ -181,6 +181,8 @@ def test_agent_instructions_route_every_publication_class_to_one_gate():
         "plugin, skill, or marketplace listing",
         "workflow",
         "--no-verify",
+        "git config --get core.hooksPath",
+        "git config core.hooksPath .githooks",
     )
     for phrase in required:
         assert phrase in instructions

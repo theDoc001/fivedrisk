@@ -7,6 +7,10 @@ These instructions apply to the entire repository.
 
 Local editing, commits, builds, and tests may run at any time.
 
+Before a publication task, verify `git config --get core.hooksPath` prints exactly
+`.githooks`. If it does not, stop and run `git config core.hooksPath .githooks` before
+continuing. The tracked hook is a required local control, not an optional convenience.
+
 Before every external mutation, run `python tools/release_window.py --action <action>`
 from the repository root and proceed only when it exits 0. Use one of the action names
 accepted by the command. External mutations include:
