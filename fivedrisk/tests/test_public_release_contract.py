@@ -251,6 +251,9 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     assert publish.index("--action package-publish") < publish.index(
         "pypa/gh-action-pypi-publish"
     )
+    assert publish.index("--action attestation") < publish.index(
+        "actions/attest-build-provenance@v2"
+    )
     assert publish.index("--action tag") < publish.index('git push origin "v$VERSION"')
     assert publish.index("--action github-release") < publish.index("gh release create")
     assert publish.index("pypa/gh-action-pypi-publish") < publish.index(

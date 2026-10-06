@@ -56,6 +56,14 @@ def test_plugin_zip_rejects_symlinks(tmp_path: Path):
         raise AssertionError("symlink was accepted")
 
 
+def test_plugin_zip_rejects_backslash_paths(tmp_path: Path):
+    source = tmp_path / "fivedrisk-plugin"
+    source.mkdir()
+    (source / "..\\escape.txt").write_text("x", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="unsafe plugin archive path"):
+        build_plugin_archive.build(source, tmp_path / "plugin.zip", 1_800_000_000)
+
+
 def test_release_archive_contains_only_the_tracked_plugin_tree(tmp_path: Path):
     output = tmp_path / "plugin.zip"
     build_plugin_archive.build_from_git(ROOT / "fivedrisk-plugin", output, "HEAD")
@@ -131,6 +139,15 @@ def test_git_archive_rejects_a_tracked_symlink(tmp_path: Path):
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "add symlink")
     with pytest.raises(RuntimeError, match="unsupported Git entry"):
+        build_plugin_archive.build_from_git(source, tmp_path / "plugin.zip", "HEAD")
+
+
+def test_git_archive_rejects_a_tracked_backslash_path(tmp_path: Path):
+    repo, source = _minimal_plugin_repo(tmp_path)
+    (source / "..\\escape.txt").write_text("x", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "add backslash path")
+    with pytest.raises(RuntimeError, match="unsafe plugin archive path"):
         build_plugin_archive.build_from_git(source, tmp_path / "plugin.zip", "HEAD")
 
 

@@ -115,6 +115,10 @@ jobs:
           python -I tools/artifact_checksums.py --write dist
           python -I tools/artifact_checksums.py --verify dist
 
+      - name: Recheck immediately before provenance attestation
+        if: steps.metadata.outputs.version != ''
+        run: python -I tools/release_window.py --action attestation
+
       - name: Bind artifact digests to this exact candidate SHA
         if: steps.metadata.outputs.version != ''
         uses: actions/attest-build-provenance@v2

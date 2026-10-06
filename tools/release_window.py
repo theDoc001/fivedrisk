@@ -25,6 +25,7 @@ OPEN_HOUR = 19
 CLOSE_HOUR = 7
 SCHEDULES = frozenset({"5 17 * * *", "5 18 * * *"})
 ACTIONS = (
+    "attestation",
     "github-release",
     "merge",
     "package-publish",

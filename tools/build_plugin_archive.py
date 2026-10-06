@@ -20,6 +20,18 @@ from pathlib import Path, PurePosixPath
 Entry = tuple[PurePosixPath, bytes, int]
 
 
+def _validate_archive_path(path: PurePosixPath) -> None:
+    rendered = path.as_posix()
+    if (
+        not rendered
+        or "\\" in rendered
+        or path.is_absolute()
+        or any(part in {"", ".", ".."} for part in path.parts)
+        or PurePosixPath(rendered).as_posix() != rendered
+    ):
+        raise RuntimeError(f"unsafe plugin archive path: {rendered}")
+
+
 def _zip_time(epoch: int) -> tuple[int, int, int, int, int, int]:
     if epoch < 0:
         raise RuntimeError("SOURCE_DATE_EPOCH must be non-negative")
@@ -51,6 +63,7 @@ def _write_zip(entries: list[Entry], destination: Path, epoch: int) -> None:
     try:
         with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED) as archive:
             for relative, content, mode in sorted(entries, key=lambda entry: entry[0].as_posix()):
+                _validate_archive_path(relative)
                 info = zipfile.ZipInfo(relative.as_posix(), _zip_time(epoch))
                 info.create_system = 3
                 info.compress_type = zipfile.ZIP_STORED
@@ -133,7 +146,10 @@ def _tracked_modes(root: Path, commit: str, relative: PurePosixPath) -> dict[Pur
         if object_type != b"blob" or mode not in {b"100644", b"100755"}:
             path = raw_path.decode("utf-8", errors="replace")
             raise RuntimeError(f"plugin archive refuses unsupported Git entry: {path}")
-        path = PurePosixPath(raw_path.decode("utf-8"))
+        decoded_path = raw_path.decode("utf-8")
+        if "\\" in decoded_path:
+            raise RuntimeError(f"unsafe plugin archive path: {decoded_path}")
+        path = PurePosixPath(decoded_path)
         try:
             within_source = path.relative_to(relative)
         except ValueError as exc:
@@ -156,6 +172,8 @@ def _tar_entries(
     try:
         with tarfile.open(fileobj=io.BytesIO(payload), mode="r:") as archive:
             for member in archive:
+                if "\\" in member.name:
+                    raise RuntimeError(f"unsafe plugin archive path: {member.name}")
                 raw = PurePosixPath(member.name)
                 if raw.is_absolute() or ".." in raw.parts:
                     raise RuntimeError(f"unsafe plugin archive path: {member.name}")
