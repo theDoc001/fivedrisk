@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import subprocess
@@ -94,6 +95,34 @@ def _normalized(ruleset: dict) -> dict:
     }
 
 
+def _matches_desired(existing: dict, desired: dict) -> bool:
+    """Accept only explicitly classified GitHub response canonicalization."""
+
+    try:
+        actual = copy.deepcopy(_normalized(existing))
+    except (KeyError, TypeError):
+        return False
+    rules = actual.get("rules")
+    if not isinstance(rules, list) or not all(isinstance(rule, dict) for rule in rules):
+        return False
+    pull_requests = [rule for rule in rules if rule.get("type") == "pull_request"]
+    if len(pull_requests) > 1:
+        return False
+    if pull_requests:
+        parameters = pull_requests[0].get("parameters")
+        if not isinstance(parameters, dict):
+            return False
+        parameters.setdefault("automatic_copilot_code_review_enabled", False)
+        if parameters.get("required_reviewers") == []:
+            parameters.pop("required_reviewers")
+        if parameters.get("require_extra_approval_for_unattributed_changes") is True:
+            parameters.pop("require_extra_approval_for_unattributed_changes")
+    try:
+        return actual == _normalized(desired)
+    except (KeyError, TypeError):
+        return False
+
+
 def current_rulesets(repository: str) -> dict[str, dict]:
     summary = json.loads(_gh(repository))
     if not isinstance(summary, list):
@@ -121,7 +150,7 @@ def verify(repository: str) -> None:
     current = current_rulesets(repository)
     for desired in desired_rulesets():
         existing = current.get(desired["name"])
-        if existing is None or _normalized(existing) != desired:
+        if existing is None or not _matches_desired(existing, desired):
             raise RuntimeError(f"ruleset is missing or differs: {desired['name']}")
 
 
@@ -142,7 +171,7 @@ def apply(repository: str) -> None:
         if existing is None:
             _gate_mutation()
             _gh(repository, "--method", "POST", "--input", "-", stdin=payload)
-        elif _normalized(existing) != desired:
+        elif not _matches_desired(existing, desired):
             _gate_mutation()
             result = subprocess.run(
                 (
