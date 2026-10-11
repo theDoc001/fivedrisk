@@ -1,7 +1,8 @@
 # Release controls
 
-External mutations are permitted only from 19:00 inclusive through 07:00 exclusive
-in `Europe/Tirane`. Local edits, tests, builds, and commits can happen at any time.
+External mutations are permitted all day on Saturday and Sunday in `Europe/Tirane`.
+Monday through Friday they are permitted only from 19:00 inclusive through 07:00
+exclusive. Local edits, tests, builds, and commits can happen at any time.
 
 On every fresh clone, activate and verify the tracked pre-push hook:
 

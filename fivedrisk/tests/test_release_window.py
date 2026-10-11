@@ -40,6 +40,48 @@ def test_exact_local_boundaries(local_value: str, allowed: bool):
 
 
 @pytest.mark.parametrize(
+    "local_value",
+    [
+        "2026-10-10T07:00:00+02:00",
+        "2026-10-10T18:59:59+02:00",
+        "2026-10-11T07:00:00+02:00",
+        "2026-10-11T18:59:59+02:00",
+    ],
+)
+def test_weekends_are_open_all_day_in_tirane(local_value: str):
+    decision = release_window.decide(dt.datetime.fromisoformat(local_value))
+    assert decision.local_time.weekday() >= 5
+    assert decision.allowed is True
+    assert "weekend" in decision.reason
+
+
+def test_representative_weekday_midday_remains_denied():
+    decision = release_window.decide(dt.datetime.fromisoformat("2026-10-12T12:00:00+02:00"))
+    assert decision.local_time.weekday() == 0
+    assert decision.allowed is False
+    assert "weekday" in decision.reason
+
+
+@pytest.mark.parametrize(
+    ("utc_value", "expected_date", "expected_weekday", "allowed"),
+    [
+        ("2026-10-09T21:59:59", dt.date(2026, 10, 9), 4, True),
+        ("2026-10-09T22:00:00", dt.date(2026, 10, 10), 5, True),
+        ("2026-10-11T21:59:59", dt.date(2026, 10, 11), 6, True),
+        ("2026-10-11T22:00:00", dt.date(2026, 10, 12), 0, True),
+        ("2026-10-12T10:00:00", dt.date(2026, 10, 12), 0, False),
+    ],
+)
+def test_weekend_classification_uses_tirane_date(
+    utc_value: str, expected_date: dt.date, expected_weekday: int, allowed: bool
+):
+    decision = release_window.decide(_utc(utc_value))
+    assert decision.local_time.date() == expected_date
+    assert decision.local_time.weekday() == expected_weekday
+    assert decision.allowed is allowed
+
+
+@pytest.mark.parametrize(
     ("utc_value", "expected_hour", "expected_offset"),
     [
         ("2026-01-15T18:00:00", 19, dt.timedelta(hours=1)),
@@ -56,6 +98,13 @@ def test_iana_timezone_conversion(
     decision = release_window.decide(_utc(utc_value))
     assert decision.local_time.hour == expected_hour
     assert decision.local_time.utcoffset() == expected_offset
+
+
+@pytest.mark.parametrize("utc_value", ["2026-03-29T00:59:59", "2026-10-25T01:00:00"])
+def test_dst_transition_sundays_are_open(utc_value: str):
+    decision = release_window.decide(_utc(utc_value))
+    assert decision.local_time.weekday() == 6
+    assert decision.allowed is True
 
 
 def test_naive_time_fails_closed():
@@ -87,6 +136,10 @@ def test_missing_timezone_data_fails_closed(monkeypatch: pytest.MonkeyPatch):
         ("2026-01-15T18:05:00", "5 17 * * *", False),
         ("2026-07-15T17:05:00", "5 17 * * *", True),
         ("2026-07-15T17:05:00", "5 18 * * *", False),
+        ("2026-01-17T18:05:00", "5 18 * * *", True),
+        ("2026-01-17T18:05:00", "5 17 * * *", False),
+        ("2026-07-18T17:05:00", "5 17 * * *", True),
+        ("2026-07-18T17:05:00", "5 18 * * *", False),
     ],
 )
 def test_scheduled_slot_tracks_dst(utc_value: str, schedule: str, matches: bool):

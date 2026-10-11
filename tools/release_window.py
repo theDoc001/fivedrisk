@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Fail-closed publication window gate for fivedrisk.
 
-The only permitted window is 19:00 inclusive through 07:00 exclusive in
-Europe/Tirane. The command deliberately has no time, timezone, or force override.
+Saturday and Sunday are open all day in Europe/Tirane. Monday through Friday
+are open from 19:00 inclusive through 07:00 exclusive. The command deliberately
+has no time, timezone, or force override.
 """
 
 from __future__ import annotations
@@ -70,12 +71,18 @@ def decide(instant: dt.datetime, *, zone: dt.tzinfo | None = None) -> WindowDeci
         raise
     except Exception as exc:
         raise ReleaseWindowError("clock conversion failed") from exc
-    allowed = local.hour >= OPEN_HOUR or local.hour < CLOSE_HOUR
+    weekend = local.weekday() >= 5
+    allowed = weekend or local.hour >= OPEN_HOUR or local.hour < CLOSE_HOUR
     boundary = "inside" if allowed else "outside"
+    window = (
+        f"the unrestricted weekend (Saturday and Sunday) {ZONE_NAME} publication window"
+        if weekend
+        else f"the weekday 19:00-07:00 {ZONE_NAME} publication window"
+    )
     return WindowDecision(
         allowed=allowed,
         local_time=local,
-        reason=f"{boundary} the 19:00-07:00 {ZONE_NAME} publication window",
+        reason=f"{boundary} {window}",
     )
 
 

@@ -24,11 +24,12 @@ accepted by the command. External mutations include:
 - changing remote repository rules or release settings; and
 - dispatching a workflow that can perform any of those actions.
 
-The permitted window is 19:00 inclusive through 07:00 exclusive in
-`Europe/Tirane`. Do not calculate the window independently, override the timezone,
-bypass Git hooks, use `--no-verify`, substitute another publication path, or continue
-when the gate, clock, or timezone data is unavailable. Re-run the gate immediately
-before each external mutation.
+Saturday and Sunday are permitted all day in `Europe/Tirane`. Monday through Friday
+are permitted from 19:00 inclusive through 07:00 exclusive. Do not calculate the
+window or local weekday independently, override the timezone, bypass Git hooks, use
+`--no-verify`, substitute another publication path, or continue when the gate, clock,
+or timezone data is unavailable. Re-run the gate immediately before each external
+mutation.
 
 An open window permits timing only. It does not replace release approval, required
 tests, repository protections, or other release checks. Fail closed when any required
