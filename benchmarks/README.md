@@ -14,15 +14,9 @@ The attack-class benchmark is an expectation-match harness. A passing run means 
 
 ## Regression detection
 
-CI runs `bench_ci.py --json > bench_current.json` on every PR and compares against `benchmarks/baselines/main.json`. Any scenario where p99 increased by more than **30%** relative to a comparable baseline fails the workflow (30%, not 20%, because single-run p99 on shared CI runners is heavy-tailed — see the rationale in `check_regression.py`). The CI job pins Python 3.14.6 and runs on `macos-latest` (arm64/Darwin) to match the committed baseline. If the CPU, platform, or exact Python version differs from the baseline, the checker **fails** (it never silently skips) and prints both environments so the runner or baseline can be corrected.
+On every PR, CI measures the frozen base and candidate commits on the same `macos-latest` runner with Python 3.14.6. Each commit is built as a wheel, installed non-editably into a separate environment, and run in balanced base/candidate/candidate/base order. The two three-run summaries per commit are aggregated into an effective six-run comparison. Any scenario where candidate p99 crosses both the **30%** relative and **25µs** absolute limits fails the workflow. Environment, dependency, workload, or scenario mismatches fail closed, and the workflow uploads the raw and aggregated evidence.
 
-To establish or refresh the baseline:
-
-1. Push to main and wait for the bench workflow to complete.
-2. Download the `bench-results-<run_id>` artifact.
-3. Copy the JSON to `benchmarks/baselines/main.json` and commit.
-
-For strongest CI enforcement, refresh the baseline from the same runner class used by the benchmark workflow.
+`benchmarks/baselines/main.json` is retained as a historical reference; it is not the PR merge gate. Replace it only from a separately approved, provenance-recorded run of the exact protected-main commit on the declared runner. Never derive it from candidate measurements or use a baseline refresh to waive a failing paired comparison.
 
 The threshold is tunable via `python benchmarks/check_regression.py current.json baseline.json --threshold 0.15` (for stricter 15% rule, etc).
 

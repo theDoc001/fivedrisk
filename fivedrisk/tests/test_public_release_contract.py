@@ -418,3 +418,30 @@ def test_release_workflows_pin_benchmark_runtime_to_baseline():
     assert "tomllib" not in publish
     assert "sed -n '/^\\[project\\]$/,/^\\[/" in publish
     assert f'python-version: "{baseline["env"]["python"]}"' in bench
+
+
+def test_benchmark_workflow_pairs_frozen_base_and_candidate():
+    bench = (ROOT / ".github" / "workflows" / "bench.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "github.event.pull_request.base.sha" in bench
+    assert "github.event.pull_request.head.sha" in bench
+    assert bench.count("persist-credentials: false") >= 2
+    assert 'git -C "$BASE_TREE" rev-parse HEAD' in bench
+    assert 'git -C "$CANDIDATE_TREE" rev-parse HEAD' in bench
+    assert "pip install -e" not in bench
+    assert "pip freeze --all" in bench
+    assert "diff -u" in bench
+    assert "--runs 3 --json" in bench
+    order = [
+        "base-a.json",
+        "candidate-a.json",
+        "candidate-b.json",
+        "base-b.json",
+    ]
+    positions = [bench.index(name) for name in order]
+    assert positions == sorted(positions)
+    assert "aggregate_results.py" in bench
+    assert "check_regression.py" in bench
+    assert "actions/upload-artifact@v4" in bench

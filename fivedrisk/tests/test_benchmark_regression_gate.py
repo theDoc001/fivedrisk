@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CHECKER = ROOT / "benchmarks" / "check_regression.py"
+AGGREGATOR = ROOT / "benchmarks" / "aggregate_results.py"
 
 
 def _result(tmp_path: Path, current: dict, baseline: dict) -> subprocess.CompletedProcess[str]:
@@ -52,3 +53,43 @@ def test_same_environment_latency_regression_still_fails(tmp_path):
     result = _result(tmp_path, _measurement(p99_us=200.0), _measurement())
     assert result.returncode == 1
     assert "steady_state" in result.stderr
+
+
+def test_aggregate_combines_two_three_run_results(tmp_path):
+    first = _measurement(p99_us=100.0) | {"runs": 3}
+    second = _measurement(p99_us=120.0) | {"runs": 3}
+    first_path = tmp_path / "first.json"
+    second_path = tmp_path / "second.json"
+    first_path.write_text(json.dumps(first), encoding="utf-8")
+    second_path.write_text(json.dumps(second), encoding="utf-8")
+
+    result = subprocess.run(
+        (sys.executable, "-I", str(AGGREGATOR), str(first_path), str(second_path)),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    aggregate = json.loads(result.stdout)
+    assert aggregate["runs"] == 6
+    assert aggregate["scenarios"]["steady_state"]["p99_us"] == 110.0
+
+
+def test_aggregate_rejects_environment_mismatch(tmp_path):
+    first = _measurement(python="3.14.6") | {"runs": 3}
+    second = _measurement(python="3.14.7") | {"runs": 3}
+    first_path = tmp_path / "first.json"
+    second_path = tmp_path / "second.json"
+    first_path.write_text(json.dumps(first), encoding="utf-8")
+    second_path.write_text(json.dumps(second), encoding="utf-8")
+
+    result = subprocess.run(
+        (sys.executable, "-I", str(AGGREGATOR), str(first_path), str(second_path)),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "environment" in result.stderr.lower()

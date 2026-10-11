@@ -1,55 +1,113 @@
 name: benchmark
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   bench:
-    # H5: run on macos-latest (arm64/Darwin) so the environment matches the
-    # committed benchmarks/baselines/main.json (arm64/Darwin). With the
-    # platform-matched baseline the regression comparison actually runs instead
-    # of being skipped every PR.
     runs-on: macos-latest
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_TREE: ${{ github.workspace }}/.bench/base
+      CANDIDATE_TREE: ${{ github.workspace }}/.bench/candidate
+      EVIDENCE: ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}
+      BASE_VENV: ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/base-venv
+      CANDIDATE_VENV: ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/candidate-venv
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out frozen base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .bench/base
+          persist-credentials: false
+
+      - name: Check out frozen candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: .bench/candidate
+          persist-credentials: false
+
+      - name: Verify identities and freeze benchmark instruments
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE/driver" "$EVIDENCE/runs"
+          test "$(git -C "$BASE_TREE" rev-parse HEAD)" = "$BASE_SHA"
+          test "$(git -C "$CANDIDATE_TREE" rev-parse HEAD)" = "$CANDIDATE_SHA"
+          printf 'base=%s\ncandidate=%s\n' "$BASE_SHA" "$CANDIDATE_SHA" | tee "$EVIDENCE/identities.txt"
+          cmp "$BASE_TREE/benchmarks/bench_ci.py" "$CANDIDATE_TREE/benchmarks/bench_ci.py"
+          cp "$CANDIDATE_TREE/benchmarks/bench_ci.py" "$EVIDENCE/driver/bench_ci.py"
+          cp "$CANDIDATE_TREE/benchmarks/aggregate_results.py" "$EVIDENCE/driver/aggregate_results.py"
+          cp "$CANDIDATE_TREE/benchmarks/check_regression.py" "$EVIDENCE/driver/check_regression.py"
+          shasum -a 256 \
+            "$BASE_TREE/benchmarks/bench_ci.py" \
+            "$CANDIDATE_TREE/benchmarks/bench_ci.py" \
+            "$EVIDENCE/driver/aggregate_results.py" \
+            "$EVIDENCE/driver/check_regression.py" \
+            | tee "$EVIDENCE/instrument-sha256.txt"
 
       - name: Set up Python 3.14.6
         uses: actions/setup-python@v5
         with:
           python-version: "3.14.6"
           cache: pip
+          cache-dependency-path: .bench/candidate/pyproject.toml
 
-      - name: Install package with dev extras
+      - name: Build isolated wheels
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          pip install -e ".[langgraph,dev]"
+          python -m pip install build==1.5.0 setuptools==82.0.1 wheel==0.47.0
+          mkdir -p "$EVIDENCE/base-dist" "$EVIDENCE/candidate-dist"
+          python -m build --wheel --no-isolation --outdir "$EVIDENCE/base-dist" "$BASE_TREE"
+          python -m build --wheel --no-isolation --outdir "$EVIDENCE/candidate-dist" "$CANDIDATE_TREE"
+          python -m venv "$BASE_VENV"
+          python -m venv "$CANDIDATE_VENV"
+          "$BASE_VENV/bin/python" -m pip install "$EVIDENCE"/base-dist/fivedrisk-*.whl
+          "$CANDIDATE_VENV/bin/python" -m pip install "$EVIDENCE"/candidate-dist/fivedrisk-*.whl
 
-      - name: Run CI bench
+      - name: Verify isolated imports and dependency parity
         run: |
-          # M13: --runs 5 median smooths single-run p99 noise so the regression
-          # gate compares median-vs-median (the baseline is also median-of-5).
-          # Low-18: run the bench ONCE and print a human summary from the captured
-          # JSON, instead of running the full (now 5x) bench a second time.
-          python benchmarks/bench_ci.py --runs 5 --json > bench_current.json
-          python -c "import json; d=json.load(open('bench_current.json')); print(f\"env {d['env']} runs={d.get('runs',1)}\"); [print(f\"  {k:<40} p50={v['p50_us']:.1f} p95={v['p95_us']:.1f} p99={v['p99_us']:.1f} us\") for k,v in d['scenarios'].items()]"
+          set -euo pipefail
+          mkdir -p "$EVIDENCE/neutral"
+          cd "$EVIDENCE/neutral"
+          "$BASE_VENV/bin/python" -I -c 'import importlib.metadata as m, json, pathlib, sys, fivedrisk; p=pathlib.Path(fivedrisk.__file__).resolve(); root=pathlib.Path(sys.prefix).resolve(); assert p.is_relative_to(root), (p, root); print(json.dumps({"distribution": m.version("fivedrisk"), "module": str(p), "prefix": str(root)}, sort_keys=True))' | tee "$EVIDENCE/base-import.json"
+          "$CANDIDATE_VENV/bin/python" -I -c 'import importlib.metadata as m, json, pathlib, sys, fivedrisk; p=pathlib.Path(fivedrisk.__file__).resolve(); root=pathlib.Path(sys.prefix).resolve(); assert p.is_relative_to(root), (p, root); print(json.dumps({"distribution": m.version("fivedrisk"), "module": str(p), "prefix": str(root)}, sort_keys=True))' | tee "$EVIDENCE/candidate-import.json"
+          "$BASE_VENV/bin/python" -m pip freeze --all | grep -v '^fivedrisk==' | LC_ALL=C sort > "$EVIDENCE/base-dependencies.txt"
+          "$CANDIDATE_VENV/bin/python" -m pip freeze --all | grep -v '^fivedrisk==' | LC_ALL=C sort > "$EVIDENCE/candidate-dependencies.txt"
+          diff -u "$EVIDENCE/base-dependencies.txt" "$EVIDENCE/candidate-dependencies.txt" | tee "$EVIDENCE/dependency-diff.txt"
 
-      - name: Upload bench JSON as artifact
+      - name: Run balanced paired benchmark
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE/work/base-a" "$EVIDENCE/work/candidate-a" "$EVIDENCE/work/candidate-b" "$EVIDENCE/work/base-b"
+          cd "$EVIDENCE/work/base-a"
+          TMPDIR="$PWD" "$BASE_VENV/bin/python" -I "$EVIDENCE/driver/bench_ci.py" --runs 3 --json > "$EVIDENCE/runs/base-a.json"
+          cd "$EVIDENCE/work/candidate-a"
+          TMPDIR="$PWD" "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/bench_ci.py" --runs 3 --json > "$EVIDENCE/runs/candidate-a.json"
+          cd "$EVIDENCE/work/candidate-b"
+          TMPDIR="$PWD" "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/bench_ci.py" --runs 3 --json > "$EVIDENCE/runs/candidate-b.json"
+          cd "$EVIDENCE/work/base-b"
+          TMPDIR="$PWD" "$BASE_VENV/bin/python" -I "$EVIDENCE/driver/bench_ci.py" --runs 3 --json > "$EVIDENCE/runs/base-b.json"
+          "$BASE_VENV/bin/python" -I "$EVIDENCE/driver/aggregate_results.py" "$EVIDENCE/runs/base-a.json" "$EVIDENCE/runs/base-b.json" > "$EVIDENCE/base-aggregate.json"
+          "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/aggregate_results.py" "$EVIDENCE/runs/candidate-a.json" "$EVIDENCE/runs/candidate-b.json" > "$EVIDENCE/candidate-aggregate.json"
+
+      - name: Regression check against paired base
+        run: |
+          "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/check_regression.py" \
+            "$EVIDENCE/candidate-aggregate.json" \
+            "$EVIDENCE/base-aggregate.json"
+
+      - name: Upload paired benchmark evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bench-results-${{ github.run_id }}
-          path: bench_current.json
-
-      - name: Regression check (against main baseline)
-        if: github.event_name == 'pull_request'
-        run: |
-          if [ -f benchmarks/baselines/main.json ]; then
-            python benchmarks/check_regression.py \
-              bench_current.json \
-              benchmarks/baselines/main.json
-          else
-            echo "No baseline at benchmarks/baselines/main.json; skipping regression check."
-            echo "To establish a baseline: download the bench-results artifact from a main-branch run and commit it as benchmarks/baselines/main.json."
-          fi
+          name: paired-bench-results-${{ github.run_id }}
+          path: ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}
+          if-no-files-found: error
