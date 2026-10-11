@@ -45,32 +45,72 @@ jobs:
           test "$(git -C "$BASE_TREE" rev-parse HEAD)" = "$BASE_SHA"
           test "$(git -C "$CANDIDATE_TREE" rev-parse HEAD)" = "$CANDIDATE_SHA"
           printf 'base=%s\ncandidate=%s\n' "$BASE_SHA" "$CANDIDATE_SHA" | tee "$EVIDENCE/identities.txt"
-          python3 - "$BASE_TREE/benchmarks/bench_ci.py" "$CANDIDATE_TREE/benchmarks/bench_ci.py" "$EVIDENCE" <<'PY'
+          python3 - "$BASE_TREE" "$CANDIDATE_TREE" "$EVIDENCE" <<'PY'
           import ast
           import hashlib
+          import json
+          import os
           import sys
           from pathlib import Path
 
-          def executable_dump(path: Path) -> str:
-              tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-              if (
-                  tree.body
-                  and isinstance(tree.body[0], ast.Expr)
-                  and isinstance(tree.body[0].value, ast.Constant)
-                  and isinstance(tree.body[0].value.value, str)
-              ):
-                  tree.body.pop(0)  # Remove only the module docstring.
-              return ast.dump(tree, annotate_fields=True, include_attributes=False)
+          FUNCTIONS = {
+              "_percentiles", "_measure", "_measure_async", "run_bench", "run_bench_median"
+          }
 
-          base_path, candidate_path, evidence_path = map(Path, sys.argv[1:])
-          base_dump = executable_dump(base_path)
-          candidate_dump = executable_dump(candidate_path)
-          evidence_path.joinpath("base-executable-ast.txt").write_text(base_dump, encoding="utf-8")
-          evidence_path.joinpath("candidate-executable-ast.txt").write_text(candidate_dump, encoding="utf-8")
+          def instrument_dump(path: Path) -> dict[str, str]:
+              tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+              found = {
+                  node.name: ast.dump(node, annotate_fields=True, include_attributes=False)
+                  for node in tree.body
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  and node.name in FUNCTIONS
+              }
+              if set(found) != FUNCTIONS:
+                  raise SystemExit(f"missing benchmark functions in {path}: {FUNCTIONS - set(found)}")
+              return found
+
+          def repo_files(root: Path) -> dict[str, str]:
+              files = {}
+              for path in root.rglob("*"):
+                  if ".git" in path.parts:
+                      continue
+                  relative = path.relative_to(root).as_posix()
+                  mode = path.lstat().st_mode & 0o777
+                  if path.is_symlink():
+                      digest = hashlib.sha256(
+                          ("symlink\0" + os.readlink(path)).encode()
+                      ).hexdigest()
+                  elif path.is_file():
+                      digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                  else:
+                      continue
+                  files[relative] = f"{mode:o}:{digest}"
+              return files
+
+          base_tree, candidate_tree, evidence_path = map(Path, sys.argv[1:])
+          base_path = base_tree / "benchmarks" / "bench_ci.py"
+          candidate_path = candidate_tree / "benchmarks" / "bench_ci.py"
+          base_dump = instrument_dump(base_path)
+          candidate_dump = instrument_dump(candidate_path)
+          evidence_path.joinpath("base-instrument-ast.json").write_text(
+              json.dumps(base_dump, indent=2, sort_keys=True), encoding="utf-8"
+          )
+          evidence_path.joinpath("candidate-instrument-ast.json").write_text(
+              json.dumps(candidate_dump, indent=2, sort_keys=True), encoding="utf-8"
+          )
           if base_dump != candidate_dump:
-              raise SystemExit("benchmark executable AST differs from protected base")
-          digest = hashlib.sha256(base_dump.encode()).hexdigest()
-          evidence_path.joinpath("executable-ast-sha256.txt").write_text(f"{digest}\n", encoding="utf-8")
+              raise SystemExit("measured benchmark functions differ from protected base")
+          digest = hashlib.sha256(json.dumps(base_dump, sort_keys=True).encode()).hexdigest()
+          evidence_path.joinpath("instrument-ast-sha256.txt").write_text(f"{digest}\n", encoding="utf-8")
+          base_files = repo_files(base_tree)
+          candidate_files = repo_files(candidate_tree)
+          changed = sorted(
+              path for path in base_files.keys() | candidate_files.keys()
+              if base_files.get(path) != candidate_files.get(path)
+          )
+          evidence_path.joinpath("changed-paths.txt").write_text(
+              "".join(f"{path}\n" for path in changed), encoding="utf-8"
+          )
           PY
           cp "$BASE_TREE/benchmarks/bench_ci.py" "$EVIDENCE/driver/bench_ci.py"
           cp "$BASE_TREE/benchmarks/check_regression.py" "$EVIDENCE/driver/check_regression.py"
@@ -79,6 +119,12 @@ jobs:
             echo "aggregator=protected-base" | tee "$EVIDENCE/aggregator-source.txt"
           else
             test "$BASE_SHA" = "c22213b513d4be167a0704244ad08c54e4ed1984"
+            while IFS= read -r changed; do
+              case "$changed" in
+                .github/workflows/bench.yml|README.md|benchmarks/README.md|benchmarks/bench_ci.py|benchmarks/check_regression.py|benchmarks/aggregate_paired_results.py|fivedrisk/tests/test_paired_benchmark_gate.py) ;;
+                *) echo "FAIL: non-infrastructure bootstrap path: $changed" >&2; exit 1 ;;
+              esac
+            done < "$EVIDENCE/changed-paths.txt"
             cp "$CANDIDATE_TREE/benchmarks/aggregate_paired_results.py" "$EVIDENCE/driver/aggregate_paired_results.py"
             echo "aggregator=bootstrap-candidate-infrastructure-only" | tee "$EVIDENCE/aggregator-source.txt"
           fi
@@ -119,20 +165,28 @@ jobs:
           "$BASE_VENV/bin/python" -m pip freeze --all | grep -Eiv '^fivedrisk(==|[[:space:]]+@)' | LC_ALL=C sort > "$EVIDENCE/base-dependencies.txt"
           "$CANDIDATE_VENV/bin/python" -m pip freeze --all | grep -Eiv '^fivedrisk(==|[[:space:]]+@)' | LC_ALL=C sort > "$EVIDENCE/candidate-dependencies.txt"
           diff -u "$EVIDENCE/base-dependencies.txt" "$EVIDENCE/candidate-dependencies.txt" | tee "$EVIDENCE/dependency-diff.txt"
+          for invalid in 0 -1; do
+            if "$CANDIDATE_VENV/bin/python" -I "$CANDIDATE_TREE/benchmarks/bench_ci.py" --runs "$invalid" --json > "$EVIDENCE/invalid-runs-$invalid.txt" 2>&1; then
+              echo "FAIL: candidate driver accepted --runs $invalid" >&2
+              exit 1
+            fi
+          done
 
-      - name: Run twelve balanced adjacent pairs
+      - name: Run twelve balanced crossover blocks
         run: |
           set -euo pipefail
-          for pair in $(seq -w 1 12); do
-            if (( 10#$pair % 2 == 1 )); then
-              order="base-first"
-              subjects="base candidate"
+          for block in $(seq -w 1 12); do
+            if (( 10#$block % 2 == 1 )); then
+              design="abba"
+              subjects="base candidate candidate base"
             else
-              order="candidate-first"
-              subjects="candidate base"
+              design="baab"
+              subjects="candidate base base candidate"
             fi
+            position=0
             for subject in $subjects; do
-              work="$EVIDENCE/work/pair-$pair-$order-$subject"
+              position=$((position + 1))
+              work="$EVIDENCE/work/block-$block-$design-pos-$position-$subject"
               mkdir -p "$work"
               if [ "$subject" = "base" ]; then
                 runtime="$BASE_VENV/bin/python"
@@ -140,13 +194,15 @@ jobs:
                 runtime="$CANDIDATE_VENV/bin/python"
               fi
               cd "$work"
-              TMPDIR="$work" "$runtime" -I "$EVIDENCE/driver/bench_ci.py" --runs 1 --json > "$EVIDENCE/runs/pair-$pair-$order-$subject.json"
+              TMPDIR="$work" "$runtime" -I "$EVIDENCE/driver/bench_ci.py" --runs 1 --json > "$EVIDENCE/runs/block-$block-$design-pos-$position-$subject.json"
             done
           done
+          aggregate_status=0
           "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/aggregate_paired_results.py" \
-            --input-dir "$EVIDENCE/runs" --output-dir "$EVIDENCE/summaries"
+            --input-dir "$EVIDENCE/runs" --output-dir "$EVIDENCE/summaries" || aggregate_status=$?
+          echo "AGGREGATE_STATUS=$aggregate_status" >> "$GITHUB_ENV"
 
-      - name: Verify frozen comparator and all order strata
+      - name: Verify frozen comparator and crossover verdict
         run: |
           set -euo pipefail
           printf '%s\n' '{"env":{"cpu":"control","platform":"control","python":"control"},"scenarios":{"positive_control":{"p99_us":100}}}' > "$EVIDENCE/positive-control-base.json"
@@ -155,16 +211,8 @@ jobs:
             echo "FAIL: frozen comparator unexpectedly accepted synthetic slowdown" >&2
             exit 1
           fi
-          overall=0
-          base_first=0
-          candidate_first=0
-          "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/check_regression.py" "$EVIDENCE/summaries/overall-candidate.json" "$EVIDENCE/summaries/overall-base.json" --threshold 0.30 --min-abs-us 25 || overall=$?
-          "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/check_regression.py" "$EVIDENCE/summaries/base-first-candidate.json" "$EVIDENCE/summaries/base-first-base.json" --threshold 0.30 --min-abs-us 25 || base_first=$?
-          "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/check_regression.py" "$EVIDENCE/summaries/candidate-first-candidate.json" "$EVIDENCE/summaries/candidate-first-base.json" --threshold 0.30 --min-abs-us 25 || candidate_first=$?
           "$CANDIDATE_VENV/bin/python" -c 'import json, os, pathlib; p=pathlib.Path(os.environ["EVIDENCE"])/"summaries"/"diagnostics.json"; d=json.loads(p.read_text()); [print(name, value["classification"]) for name, value in sorted(d["scenarios"].items())]'
-          test "$overall" -eq 0
-          test "$base_first" -eq 0
-          test "$candidate_first" -eq 0
+          test "$AGGREGATE_STATUS" -eq 0
 
       - name: Upload paired benchmark evidence
         if: always()
@@ -173,13 +221,15 @@ jobs:
           name: paired-bench-results-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/identities.txt
-            ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/*-executable-ast.txt
+            ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/*-instrument-ast.json
             ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/*-sha256.txt
+            ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/changed-paths.txt
             ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/aggregator-source.txt
             ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/*-import.json
             ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/*-dependencies.txt
             ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/dependency-diff.txt
             ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/positive-control-*.json
+            ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/invalid-runs-*.txt
             ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/runs/*.json
             ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/summaries/*.json
           if-no-files-found: error

@@ -1,4 +1,4 @@
-"""Acceptance contracts for the paired same-runner performance gate."""
+"""Acceptance contracts for the paired crossover performance gate."""
 
 from __future__ import annotations
 
@@ -14,42 +14,47 @@ ROOT = Path(__file__).resolve().parents[2]
 AGGREGATOR = ROOT / "benchmarks" / "aggregate_paired_results.py"
 CHECKER = ROOT / "benchmarks" / "check_regression.py"
 DRIVER = ROOT / "benchmarks" / "bench_ci.py"
+DESIGNS = {
+    "abba": ("base", "candidate", "candidate", "base"),
+    "baab": ("candidate", "base", "base", "candidate"),
+}
 
 
-def _measurement(p99_us: float, *, runs: int = 1) -> dict:
-    return {
+def _measurement(p99_us: float, *, runs_marker=...) -> dict:
+    value = {
         "env": {"cpu": "arm64", "platform": "Darwin", "python": "3.14.6"},
-        "runs": runs,
         "scenarios": {
-            "steady": {"n": 1000, "p50_us": 50.0, "p99_us": p99_us},
+            "steady": {"n": 2000, "p50_us": 50.0, "p99_us": p99_us},
         },
     }
+    if runs_marker is not ...:
+        value["runs"] = runs_marker
+    return value
 
 
-def _write_pairs(
+def _write_blocks(
     root: Path,
     *,
-    base_first_candidate: float,
-    candidate_first_candidate: float,
-    outlier_pair: int | None = None,
+    candidate_by_design: dict[str, float] | None = None,
+    value_for=None,
 ) -> None:
     root.mkdir()
-    for pair in range(1, 13):
-        order = "base-first" if pair % 2 else "candidate-first"
-        candidate = (
-            base_first_candidate if order == "base-first" else candidate_first_candidate
-        )
-        if pair == outlier_pair:
-            candidate = 10_000.0
-        for subject, value in (("base", 100.0), ("candidate", candidate)):
-            path = root / f"pair-{pair:02d}-{order}-{subject}.json"
-            path.write_text(json.dumps(_measurement(value)), encoding="utf-8")
+    candidate_by_design = candidate_by_design or {"abba": 110.0, "baab": 110.0}
+    for block in range(1, 13):
+        design = "abba" if block % 2 else "baab"
+        for position, subject in enumerate(DESIGNS[design], start=1):
+            if value_for is None:
+                p99 = 100.0 if subject == "base" else candidate_by_design[design]
+            else:
+                p99 = value_for(block, design, position, subject)
+            path = root / f"block-{block:02d}-{design}-pos-{position}-{subject}.json"
+            path.write_text(json.dumps(_measurement(p99)), encoding="utf-8")
 
 
-def _aggregate(tmp_path: Path, **kwargs) -> tuple[subprocess.CompletedProcess[str], dict]:
+def _run_aggregator(tmp_path: Path, **kwargs) -> tuple[subprocess.CompletedProcess[str], dict]:
     runs = tmp_path / "runs"
     output = tmp_path / "summaries"
-    _write_pairs(runs, **kwargs)
+    _write_blocks(runs, **kwargs)
     result = subprocess.run(
         (
             sys.executable,
@@ -70,104 +75,121 @@ def _aggregate(tmp_path: Path, **kwargs) -> tuple[subprocess.CompletedProcess[st
     return result, diagnostics
 
 
-def test_paired_aggregator_classifies_stable_pass(tmp_path):
-    result, diagnostics = _aggregate(
-        tmp_path, base_first_candidate=110.0, candidate_first_candidate=110.0
-    )
+def test_crossover_aggregator_classifies_stable_pass(tmp_path):
+    result, diagnostics = _run_aggregator(tmp_path)
     assert result.returncode == 0, result.stderr
     assert diagnostics["scenarios"]["steady"]["classification"] == "pass"
-    assert diagnostics["pair_count"] == 12
-    assert diagnostics["order_counts"] == {"base-first": 6, "candidate-first": 6}
+    assert diagnostics["block_count"] == 12
+    assert diagnostics["design_counts"] == {"abba": 6, "baab": 6}
 
 
-def test_single_run_driver_schema_is_accepted_by_aggregator(tmp_path):
-    generated = subprocess.run(
-        (sys.executable, "-I", str(DRIVER), "--runs", "1", "--json"),
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=tmp_path,
-    )
-    assert generated.returncode == 0, generated.stderr
-    measurement = json.loads(generated.stdout)
-    assert "runs" not in measurement
-
-    runs = tmp_path / "runs"
-    runs.mkdir()
-    for pair in range(1, 13):
-        order = "base-first" if pair % 2 else "candidate-first"
-        for subject in ("base", "candidate"):
-            path = runs / f"pair-{pair:02d}-{order}-{subject}.json"
-            path.write_text(json.dumps(measurement), encoding="utf-8")
-
-    output = tmp_path / "summaries"
-    result = subprocess.run(
-        (
-            sys.executable,
-            "-I",
-            str(AGGREGATOR),
-            "--input-dir",
-            str(runs),
-            "--output-dir",
-            str(output),
+def test_crossover_aggregator_classifies_stable_regression_and_exits_nonzero(tmp_path):
+    base = 26.0 / 0.31
+    candidate = base + 26.0
+    result, diagnostics = _run_aggregator(
+        tmp_path,
+        value_for=lambda _b, _d, _p, subject: (
+            base if subject == "base" else candidate
         ),
-        check=False,
-        capture_output=True,
-        text=True,
     )
-    assert result.returncode == 0, result.stderr
-    assert json.loads((output / "diagnostics.json").read_text())["pair_count"] == 12
-
-
-def test_paired_aggregator_classifies_stable_regression(tmp_path):
-    result, diagnostics = _aggregate(
-        tmp_path, base_first_candidate=140.0, candidate_first_candidate=140.0
-    )
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 1
     assert diagnostics["scenarios"]["steady"]["classification"] == "stable-regression"
 
 
-def test_paired_aggregator_classifies_order_effect_as_inconclusive(tmp_path):
-    result, diagnostics = _aggregate(
-        tmp_path, base_first_candidate=140.0, candidate_first_candidate=90.0
+@pytest.mark.parametrize(
+    "candidate_by_design",
+    (
+        {"abba": 140.0, "baab": 100.0},
+        {"abba": 200.0, "baab": 125.0},
+    ),
+)
+def test_crossover_aggregator_classifies_design_disagreement_as_inconclusive(
+    tmp_path, candidate_by_design
+):
+    result, diagnostics = _run_aggregator(
+        tmp_path, candidate_by_design=candidate_by_design
     )
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 1
     assert diagnostics["scenarios"]["steady"]["classification"] == "inconclusive"
 
 
-def test_paired_aggregator_resists_one_outlier_and_is_permutation_invariant(tmp_path):
-    result, diagnostics = _aggregate(
-        tmp_path, base_first_candidate=110.0, candidate_first_candidate=110.0,
-        outlier_pair=1,
+@pytest.mark.parametrize("drift", ("additive", "multiplicative"))
+def test_crossover_position_balance_cancels_synthetic_drift(tmp_path, drift):
+    def value_for(_block, _design, position, _subject):
+        if drift == "additive":
+            return 100.0 + 10.0 * position
+        return 100.0 * (1.1 ** position)
+
+    result, diagnostics = _run_aggregator(tmp_path, value_for=value_for)
+    assert result.returncode == 0, result.stderr
+    assert diagnostics["scenarios"]["steady"]["classification"] == "pass"
+
+
+def test_crossover_median_resists_one_extreme_block(tmp_path):
+    def value_for(block, _design, _position, subject):
+        if block == 1 and subject == "candidate":
+            return 10_000.0
+        return 110.0 if subject == "candidate" else 100.0
+
+    result, diagnostics = _run_aggregator(tmp_path, value_for=value_for)
+    assert result.returncode == 0, result.stderr
+    assert diagnostics["scenarios"]["steady"]["classification"] == "pass"
+
+
+@pytest.mark.parametrize(
+    ("base", "candidate"),
+    ((100.0, 130.0), (100.0, 125.0)),
+)
+def test_threshold_equality_is_not_a_breach(tmp_path, base, candidate):
+    result, diagnostics = _run_aggregator(
+        tmp_path,
+        value_for=lambda _b, _d, _p, subject: base if subject == "base" else candidate,
     )
     assert result.returncode == 0, result.stderr
     assert diagnostics["scenarios"]["steady"]["classification"] == "pass"
 
+
+@pytest.mark.parametrize(
+    "defect", ("missing", "duplicate", "extra", "mislabeled", "reordered")
+)
+def test_crossover_aggregator_rejects_invalid_block_structure(tmp_path, defect):
     runs = tmp_path / "runs"
-    first = runs / "pair-01-base-first-candidate.json"
-    third = runs / "pair-03-base-first-candidate.json"
-    first_text, third_text = first.read_text(), third.read_text()
-    first.write_text(third_text, encoding="utf-8")
-    third.write_text(first_text, encoding="utf-8")
-    second_output = tmp_path / "summaries-permuted"
-    rerun = subprocess.run(
+    _write_blocks(runs)
+    target = runs / "block-01-abba-pos-1-base.json"
+    if defect == "missing":
+        target.unlink()
+    elif defect == "duplicate":
+        duplicate = runs / "block-01-abba-pos-1-base-copy.json"
+        duplicate.write_text(target.read_text(), encoding="utf-8")
+    elif defect == "extra":
+        (runs / "extra.json").write_text("{}", encoding="utf-8")
+    elif defect == "mislabeled":
+        target.rename(runs / "block-01-abba-pos-1-candidate.json")
+    else:
+        other = runs / "block-01-abba-pos-2-candidate.json"
+        target.rename(runs / "block-01-abba-pos-2-base.json")
+        other.rename(runs / "block-01-abba-pos-1-candidate.json")
+    result = subprocess.run(
         (
             sys.executable, "-I", str(AGGREGATOR), "--input-dir", str(runs),
-            "--output-dir", str(second_output),
+            "--output-dir", str(tmp_path / "summaries"),
         ),
         check=False, capture_output=True, text=True,
     )
-    assert rerun.returncode == 0, rerun.stderr
-    assert json.loads((second_output / "overall-candidate.json").read_text()) == json.loads(
-        (tmp_path / "summaries" / "overall-candidate.json").read_text()
-    )
+    assert result.returncode == 1
 
 
-@pytest.mark.parametrize("defect", ("environment", "scenario", "metric", "runs", "nan"))
-def test_paired_aggregator_rejects_malformed_or_incomparable_inputs(tmp_path, defect):
+@pytest.mark.parametrize(
+    "defect",
+    (
+        "environment", "scenario", "metric", "runs_true", "runs_float",
+        "runs_zero", "runs_negative", "nan", "nonpositive",
+    ),
+)
+def test_crossover_aggregator_rejects_malformed_or_incomparable_inputs(tmp_path, defect):
     runs = tmp_path / "runs"
-    _write_pairs(runs, base_first_candidate=110.0, candidate_first_candidate=110.0)
-    target = runs / "pair-12-candidate-first-candidate.json"
+    _write_blocks(runs)
+    target = runs / "block-12-baab-pos-4-candidate.json"
     value = json.loads(target.read_text())
     if defect == "environment":
         value["env"]["python"] = "3.14.7"
@@ -175,10 +197,18 @@ def test_paired_aggregator_rejects_malformed_or_incomparable_inputs(tmp_path, de
         value["scenarios"] = {"other": value["scenarios"].pop("steady")}
     elif defect == "metric":
         value["scenarios"]["steady"]["p95_us"] = 80.0
-    elif defect == "runs":
+    elif defect == "runs_true":
+        value["runs"] = True
+    elif defect == "runs_float":
+        value["runs"] = 1.0
+    elif defect == "runs_zero":
         value["runs"] = 0
-    else:
+    elif defect == "runs_negative":
+        value["runs"] = -1
+    elif defect == "nan":
         value["scenarios"]["steady"]["p99_us"] = float("nan")
+    else:
+        value["scenarios"]["steady"]["p99_us"] = 0.0
     target.write_text(json.dumps(value), encoding="utf-8")
 
     result = subprocess.run(
@@ -188,10 +218,47 @@ def test_paired_aggregator_rejects_malformed_or_incomparable_inputs(tmp_path, de
         ),
         check=False, capture_output=True, text=True,
     )
+    assert result.returncode == 1
+
+
+def test_single_run_driver_schema_is_accepted_by_aggregator(tmp_path):
+    generated = subprocess.run(
+        (sys.executable, "-I", str(DRIVER), "--runs", "1", "--json"),
+        check=False, capture_output=True, text=True, cwd=tmp_path,
+    )
+    assert generated.returncode == 0, generated.stderr
+    measurement = json.loads(generated.stdout)
+    assert "runs" not in measurement
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    for block in range(1, 13):
+        design = "abba" if block % 2 else "baab"
+        for position, subject in enumerate(DESIGNS[design], start=1):
+            path = runs / f"block-{block:02d}-{design}-pos-{position}-{subject}.json"
+            path.write_text(json.dumps(measurement), encoding="utf-8")
+    result = subprocess.run(
+        (
+            sys.executable, "-I", str(AGGREGATOR), "--input-dir", str(runs),
+            "--output-dir", str(tmp_path / "summaries"),
+        ),
+        check=False, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("invalid", ("0", "-1"))
+def test_driver_cli_rejects_invalid_run_count_before_benchmark(tmp_path, invalid):
+    result = subprocess.run(
+        (sys.executable, "-I", str(DRIVER), "--runs", invalid, "--json"),
+        check=False, capture_output=True, text=True, cwd=tmp_path,
+    )
     assert result.returncode != 0
+    assert "positive integer" in result.stderr
+    assert result.stdout == ""
 
 
-def test_benchmark_workflow_uses_protected_tools_and_balanced_fresh_processes():
+def test_benchmark_workflow_uses_protected_tools_and_balanced_crossover_blocks():
     workflow = (ROOT / ".github" / "workflows" / "bench.yml").read_text()
     assert "github.event.pull_request.base.sha" in workflow
     assert "github.event.pull_request.head.sha" in workflow
@@ -199,16 +266,19 @@ def test_benchmark_workflow_uses_protected_tools_and_balanced_fresh_processes():
     assert 'cp "$BASE_TREE/benchmarks/check_regression.py"' in workflow
     assert "aggregate_paired_results.py" in workflow
     assert "seq -w 1 12" in workflow
-    assert '10#$pair % 2' in workflow
+    assert 'design="abba"' in workflow
+    assert 'subjects="base candidate candidate base"' in workflow
+    assert 'subjects="candidate base base candidate"' in workflow
     assert "--runs 1 --json" in workflow
-    assert workflow.count("--threshold 0.30 --min-abs-us 25") == 4
+    assert "--threshold 0.30 --min-abs-us 25" in workflow
     assert "positive-control-current.json" in workflow
     assert "persist-credentials: false" in workflow
     assert 'python-version: "3.14.6"' in workflow
+    assert "bootstrap-candidate-infrastructure-only" in workflow
 
 
 def test_benchmark_driver_documents_the_enforced_dual_threshold():
-    driver = (ROOT / "benchmarks" / "bench_ci.py").read_text()
+    driver = DRIVER.read_text()
     assert "more than 20%" not in driver
     assert "greater than 30%" in driver
     assert "greater than 25" in driver

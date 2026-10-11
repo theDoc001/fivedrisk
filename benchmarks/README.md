@@ -14,7 +14,7 @@ The attack-class benchmark is an expectation-match harness. A passing run means 
 
 ## Regression detection
 
-On every PR, CI runs 12 fresh-process adjacent base/candidate pairs on the same `macos-latest` runner with Python 3.14.6. Order alternates between six base-first and six candidate-first pairs. Protected-base tools aggregate median p99 overall and by order stratum; all three comparisons must stay within both the **30%** relative and **25µs** absolute limits. A disagreement between strata is inconclusive and blocks release. Environment, dependency, workload, scenario, or metric mismatches fail closed, and CI uploads all raw and diagnostic evidence.
+On every PR, CI runs 12 fresh-process crossover blocks on the same `macos-latest` runner with Python 3.14.6: six ABBA and six BAAB blocks, where A is protected base and B is the candidate. Each block produces a position-balanced relative and absolute p99 effect. Protected-base tools aggregate the median effect overall and by crossover design; all three populations must stay within either the **30%** relative or **25µs** absolute limit. A disagreement between populations is inconclusive and blocks release. Environment, dependency, workload, scenario, metric, structure, or run-count mismatches fail closed, and CI uploads all raw and diagnostic evidence.
 
 `benchmarks/baselines/main.json` is retained as a historical reference; it is not the PR merge gate. Never derive a reference baseline from candidate measurements or use a baseline refresh to waive a failing paired comparison.
 

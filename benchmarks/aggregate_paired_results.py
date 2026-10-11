@@ -1,4 +1,4 @@
-"""Aggregate a fixed balanced 12-pair benchmark experiment."""
+"""Aggregate a fixed balanced 12-block crossover benchmark experiment."""
 
 from __future__ import annotations
 
@@ -12,20 +12,24 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-PAIR_RE = re.compile(
-    r"^pair-(?P<pair>\d{2})-(?P<order>base-first|candidate-first)-"
-    r"(?P<subject>base|candidate)\.json$"
+BLOCK_RE = re.compile(
+    r"^block-(?P<block>\d{2})-(?P<design>abba|baab)-pos-"
+    r"(?P<position>[1-4])-(?P<subject>base|candidate)\.json$"
 )
-ORDERS = ("base-first", "candidate-first")
-SUBJECTS = ("base", "candidate")
+DESIGNS = ("abba", "baab")
+SUBJECTS_BY_DESIGN = {
+    "abba": ("base", "candidate", "candidate", "base"),
+    "baab": ("candidate", "base", "base", "candidate"),
+}
 THRESHOLD = 0.30
 MIN_ABS_US = 25.0
 
 
 @dataclass(frozen=True)
 class Record:
-    pair: int
-    order: str
+    block: int
+    design: str
+    position: int
     subject: str
     path: Path
     value: dict
@@ -34,7 +38,7 @@ class Record:
 def _load_records(input_dir: Path) -> list[Record]:
     records: list[Record] = []
     for path in sorted(input_dir.glob("*.json")):
-        match = PAIR_RE.fullmatch(path.name)
+        match = BLOCK_RE.fullmatch(path.name)
         if match is None:
             raise ValueError(f"unexpected benchmark result name: {path.name}")
         with path.open(encoding="utf-8") as handle:
@@ -43,30 +47,35 @@ def _load_records(input_dir: Path) -> list[Record]:
             raise ValueError(f"{path.name}: expected a JSON object")
         records.append(
             Record(
-                pair=int(match.group("pair")),
-                order=match.group("order"),
+                block=int(match.group("block")),
+                design=match.group("design"),
+                position=int(match.group("position")),
                 subject=match.group("subject"),
                 path=path,
                 value=value,
             )
         )
 
-    expected = {
-        (pair, "base-first" if pair % 2 else "candidate-first", subject)
-        for pair in range(1, 13)
-        for subject in SUBJECTS
+    expected = set()
+    for block in range(1, 13):
+        design = "abba" if block % 2 else "baab"
+        for position, subject in enumerate(SUBJECTS_BY_DESIGN[design], start=1):
+            expected.add((block, design, position, subject))
+    observed = {
+        (record.block, record.design, record.position, record.subject)
+        for record in records
     }
-    observed = {(record.pair, record.order, record.subject) for record in records}
     if observed != expected or len(records) != len(expected):
         missing = sorted(expected - observed)
         extra = sorted(observed - expected)
         raise ValueError(
-            f"expected exactly 12 balanced adjacent pairs; missing={missing}, extra={extra}"
+            "expected exactly 12 balanced crossover blocks; "
+            f"missing={missing}, extra={extra}"
         )
     return records
 
 
-def _validate(records: list[Record]) -> tuple[dict, tuple[str, ...], dict[str, tuple[str, ...]]]:
+def _validate(records: list[Record]) -> tuple[dict, tuple[str, ...]]:
     first = records[0].value
     environment = first.get("env")
     scenarios = first.get("scenarios")
@@ -79,20 +88,29 @@ def _validate(records: list[Record]) -> tuple[dict, tuple[str, ...], dict[str, t
 
     for record in records:
         value = record.value
-        # bench_ci.py preserves its historical single-run schema and only adds
-        # ``runs`` when more than one repetition is requested.  The workflow
-        # invokes ``--runs 1``, so an omitted field is the canonical value 1.
-        if value.get("runs", 1) != 1:
-            raise ValueError(f"{record.path.name}: runs must be absent or the positive integer 1")
+        if "runs" in value and (
+            type(value["runs"]) is not int or value["runs"] != 1
+        ):
+            raise ValueError(
+                f"{record.path.name}: runs must be absent or the positive integer 1"
+            )
         if value.get("env") != environment:
             raise ValueError(f"{record.path.name}: benchmark environment mismatch")
         current_scenarios = value.get("scenarios")
-        if not isinstance(current_scenarios, dict) or tuple(sorted(current_scenarios)) != scenario_names:
+        if (
+            not isinstance(current_scenarios, dict)
+            or tuple(sorted(current_scenarios)) != scenario_names
+        ):
             raise ValueError(f"{record.path.name}: benchmark scenario mismatch")
         for scenario in scenario_names:
             metrics = current_scenarios[scenario]
-            if not isinstance(metrics, dict) or tuple(sorted(metrics)) != metric_names[scenario]:
-                raise ValueError(f"{record.path.name}: benchmark metric mismatch for {scenario}")
+            if (
+                not isinstance(metrics, dict)
+                or tuple(sorted(metrics)) != metric_names[scenario]
+            ):
+                raise ValueError(
+                    f"{record.path.name}: benchmark metric mismatch for {scenario}"
+                )
             for metric, measurement in metrics.items():
                 if (
                     not isinstance(measurement, (int, float))
@@ -102,126 +120,113 @@ def _validate(records: list[Record]) -> tuple[dict, tuple[str, ...], dict[str, t
                     raise ValueError(
                         f"{record.path.name}: {scenario}.{metric} must be finite numeric data"
                     )
-    return environment, scenario_names, metric_names
+            if metrics.get("p99_us", 0) <= 0:
+                raise ValueError(
+                    f"{record.path.name}: {scenario}.p99_us must be positive"
+                )
+    return environment, scenario_names
 
 
 def _median(values: list[float]) -> float:
-    return round(float(statistics.median(values)), 3)
+    return float(statistics.median(values))
 
 
 def _mad(values: list[float]) -> float:
     center = statistics.median(values)
-    return round(float(statistics.median(abs(value - center) for value in values)), 3)
+    return float(statistics.median(abs(value - center) for value in values))
 
 
-def _summary(
-    records: list[Record],
-    environment: dict,
-    scenario_names: tuple[str, ...],
-    metric_names: dict[str, tuple[str, ...]],
-    *,
-    subject: str,
-    order: str | None,
-) -> dict:
-    selected = [
-        record for record in records
-        if record.subject == subject and (order is None or record.order == order)
-    ]
+def _strictly_exceeds(value: float, limit: float) -> bool:
+    """Return true only above, not numerically equal to, a policy limit."""
+    return value > limit and not math.isclose(
+        value, limit, rel_tol=1e-12, abs_tol=1e-12
+    )
+
+
+def _block_effect(records: list[Record], scenario: str) -> dict:
+    values = {
+        subject: [
+            float(record.value["scenarios"][scenario]["p99_us"])
+            for record in records
+            if record.subject == subject
+        ]
+        for subject in ("base", "candidate")
+    }
+    relative = math.exp(
+        (
+            sum(math.log(value) for value in values["candidate"])
+            - sum(math.log(value) for value in values["base"])
+        )
+        / 2.0
+    ) - 1.0
+    absolute = (sum(values["candidate"]) - sum(values["base"])) / 2.0
     return {
-        "env": environment,
-        "runs": len(selected),
-        "subject": subject,
-        "order": order or "overall",
-        "scenarios": {
-            scenario: {
-                metric: _median(
-                    [record.value["scenarios"][scenario][metric] for record in selected]
-                )
-                for metric in metric_names[scenario]
-            }
-            for scenario in scenario_names
-        },
+        "base_p99_us": values["base"],
+        "candidate_p99_us": values["candidate"],
+        "relative_effect": relative,
+        "absolute_effect_us": absolute,
     }
 
 
-def _breaches(base: float, candidate: float) -> bool:
-    return candidate / max(base, 1.0) - 1.0 > THRESHOLD and candidate - base > MIN_ABS_US
+def _population(effects: list[dict], design: str | None) -> dict:
+    selected = [
+        effect for effect in effects
+        if design is None or effect["design"] == design
+    ]
+    relative_values = [effect["relative_effect"] for effect in selected]
+    absolute_values = [effect["absolute_effect_us"] for effect in selected]
+    relative = _median(relative_values)
+    absolute = _median(absolute_values)
+    return {
+        "block_count": len(selected),
+        "median_relative_effect": round(relative, 6),
+        "median_absolute_effect_us": round(absolute, 3),
+        "mad_relative_effect": round(_mad(relative_values), 6),
+        "mad_absolute_effect_us": round(_mad(absolute_values), 3),
+        "breaches": (
+            _strictly_exceeds(relative, THRESHOLD)
+            and _strictly_exceeds(absolute, MIN_ABS_US)
+        ),
+    }
 
 
-def aggregate(input_dir: Path) -> tuple[dict[str, dict], dict]:
+def aggregate(input_dir: Path) -> dict:
     records = _load_records(input_dir)
-    environment, scenario_names, metric_names = _validate(records)
-    summaries: dict[str, dict] = {}
-    for label, order in (("overall", None), ("base-first", "base-first"), ("candidate-first", "candidate-first")):
-        for subject in SUBJECTS:
-            summaries[f"{label}-{subject}"] = _summary(
-                records, environment, scenario_names, metric_names,
-                subject=subject, order=order,
-            )
-
+    environment, scenario_names = _validate(records)
     diagnostic_scenarios: dict[str, dict] = {}
     for scenario in scenario_names:
-        strata: dict[str, dict] = {}
-        for label in ("overall", *ORDERS):
-            base = summaries[f"{label}-base"]["scenarios"][scenario]["p99_us"]
-            candidate = summaries[f"{label}-candidate"]["scenarios"][scenario]["p99_us"]
-            strata[label] = {
-                "base_median_p99_us": base,
-                "candidate_median_p99_us": candidate,
-                "delta_fraction": round(candidate / max(base, 1.0) - 1.0, 6),
-                "delta_us": round(candidate - base, 3),
-                "breaches": _breaches(base, candidate),
-            }
-        decisions = [strata[label]["breaches"] for label in ("overall", *ORDERS)]
+        effects = []
+        for block in range(1, 13):
+            block_records = [record for record in records if record.block == block]
+            effect = _block_effect(block_records, scenario)
+            effect.update({"block": block, "design": block_records[0].design})
+            effects.append(effect)
+        populations = {
+            label: _population(effects, design)
+            for label, design in (("overall", None), ("abba", "abba"), ("baab", "baab"))
+        }
+        decisions = [populations[label]["breaches"] for label in ("overall", *DESIGNS)]
         classification = (
             "stable-regression" if all(decisions)
             else "pass" if not any(decisions)
             else "inconclusive"
         )
-        raw = []
-        for pair in range(1, 13):
-            order = "base-first" if pair % 2 else "candidate-first"
-            pair_records = {
-                record.subject: record for record in records if record.pair == pair
-            }
-            base_value = pair_records["base"].value["scenarios"][scenario]["p99_us"]
-            candidate_value = pair_records["candidate"].value["scenarios"][scenario]["p99_us"]
-            raw.append(
-                {
-                    "pair": pair,
-                    "order": order,
-                    "base_p99_us": base_value,
-                    "candidate_p99_us": candidate_value,
-                    "delta_us": round(candidate_value - base_value, 3),
-                }
-            )
-        dispersion = {}
-        for label, order in (("overall", None), ("base-first", "base-first"), ("candidate-first", "candidate-first")):
-            dispersion[label] = {
-                subject: _mad(
-                    [
-                        record.value["scenarios"][scenario]["p99_us"]
-                        for record in records
-                        if record.subject == subject and (order is None or record.order == order)
-                    ]
-                )
-                for subject in SUBJECTS
-            }
+        for effect in effects:
+            effect["relative_effect"] = round(effect["relative_effect"], 6)
+            effect["absolute_effect_us"] = round(effect["absolute_effect_us"], 3)
         diagnostic_scenarios[scenario] = {
             "classification": classification,
-            "strata": strata,
-            "mad_p99_us": dispersion,
-            "pairs": raw,
+            "populations": populations,
+            "blocks": effects,
         }
 
-    diagnostics = {
+    return {
         "policy": {"threshold": THRESHOLD, "min_abs_us": MIN_ABS_US},
-        "pair_count": 12,
-        "order_counts": {"base-first": 6, "candidate-first": 6},
+        "block_count": 12,
+        "design_counts": {"abba": 6, "baab": 6},
         "environment": environment,
         "scenarios": diagnostic_scenarios,
     }
-    return summaries, diagnostics
 
 
 def main() -> int:
@@ -230,19 +235,23 @@ def main() -> int:
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
     try:
-        summaries, diagnostics = aggregate(args.input_dir)
+        diagnostics = aggregate(args.input_dir)
         args.output_dir.mkdir(parents=True, exist_ok=False)
-        for name, value in summaries.items():
-            args.output_dir.joinpath(f"{name}.json").write_text(
-                json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n",
-                encoding="utf-8",
-            )
         args.output_dir.joinpath("diagnostics.json").write_text(
             json.dumps(diagnostics, indent=2, sort_keys=True, allow_nan=False) + "\n",
             encoding="utf-8",
         )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+
+    blocked = {
+        name: value["classification"]
+        for name, value in diagnostics["scenarios"].items()
+        if value["classification"] != "pass"
+    }
+    if blocked:
+        print(f"FAIL: non-passing crossover verdicts: {blocked}", file=sys.stderr)
         return 1
     return 0
 
