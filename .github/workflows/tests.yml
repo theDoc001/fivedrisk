@@ -22,13 +22,19 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install package with dev + langgraph extras
+      - name: Install non-editable package with dev + langgraph extras
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[langgraph,dev]"
+          python -m pip install ".[langgraph,dev]"
+
+      - name: Verify installed package provenance
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -I -c 'from importlib import metadata; from pathlib import Path; import fivedrisk; assert Path(fivedrisk.__file__).resolve().parent == Path(metadata.distribution("fivedrisk").locate_file("fivedrisk")).resolve()'
 
       - name: Run pytest
-        run: pytest fivedrisk/tests/ -q --maxfail=10
+        working-directory: ${{ runner.temp }}
+        run: python -I -m pytest "$GITHUB_WORKSPACE/fivedrisk/tests" --import-mode=importlib -q --maxfail=10
 
       - name: Build and inspect runtime-only wheel
         if: matrix.python-version == '3.12'

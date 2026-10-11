@@ -93,6 +93,19 @@ def test_every_public_install_workflow_verifies_provenance_first():
     assert not offenders, f"install workflows without provenance-first verification: {offenders}"
 
 
+def test_python_ci_exercises_the_noneditable_installed_distribution():
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(
+        encoding="utf-8"
+    )
+    assert 'pip install -e' not in workflow
+    assert 'python -m pip install ".[langgraph,dev]"' in workflow
+    assert workflow.count("working-directory: ${{ runner.temp }}") >= 2
+    assert 'Path(fivedrisk.__file__).resolve().parent' in workflow
+    assert 'metadata.distribution("fivedrisk").locate_file("fivedrisk")' in workflow
+    assert 'python -I -m pytest "$GITHUB_WORKSPACE/fivedrisk/tests"' in workflow
+    assert "--import-mode=importlib" in workflow
+
+
 def test_every_published_policy_fence_validates_without_warnings(tmp_path):
     offenders: dict[str, list[str]] = {}
     fence_number = 0
