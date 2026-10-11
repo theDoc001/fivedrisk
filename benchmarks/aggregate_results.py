@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 import sys
 from pathlib import Path
@@ -17,10 +18,18 @@ def _load(path: Path) -> dict:
     return value
 
 
-def aggregate(paths: list[Path]) -> dict:
+def aggregate(paths: list[Path], *, subject: str) -> dict:
     if len(paths) < 2:
         raise ValueError("at least two benchmark results are required")
+    if any(not path.name.startswith(f"{subject}-") for path in paths):
+        raise ValueError(f"input subject mismatch: expected only {subject!r} results")
     results = [_load(path) for path in paths]
+    run_counts = [result.get("runs", 1) for result in results]
+    if any(
+        not isinstance(count, int) or isinstance(count, bool) or count <= 0
+        for count in run_counts
+    ):
+        raise ValueError("benchmark run counts must be positive integers")
     first = results[0]
     environment = first.get("env")
     if not isinstance(environment, dict):
@@ -49,6 +58,10 @@ def aggregate(paths: list[Path]) -> dict:
                 for value in values
             )
             if numeric:
+                if not all(math.isfinite(value) for value in values):
+                    raise ValueError(
+                        f"benchmark metric must be finite for {name!r}.{key}"
+                    )
                 merged[name][key] = round(statistics.median(values), 3)
             elif len(set(values)) == 1:
                 merged[name][key] = values[0]
@@ -59,8 +72,9 @@ def aggregate(paths: list[Path]) -> dict:
 
     return {
         "env": environment,
-        "runs": sum(int(result.get("runs", 1)) for result in results),
-        "sources": [path.name for path in paths],
+        "runs": sum(run_counts),
+        "sources": sorted(path.name for path in paths),
+        "subject": subject,
         "scenarios": merged,
     }
 
@@ -69,10 +83,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Aggregate benchmark JSON summaries with strict compatibility checks"
     )
+    parser.add_argument("--subject", required=True, choices=("base", "candidate"))
     parser.add_argument("results", nargs="+", type=Path)
     args = parser.parse_args()
     try:
-        result = aggregate(args.results)
+        result = aggregate(args.results, subject=args.subject)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1

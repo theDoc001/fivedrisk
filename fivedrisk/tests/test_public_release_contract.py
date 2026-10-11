@@ -448,3 +448,20 @@ def test_benchmark_workflow_pairs_frozen_base_and_candidate():
     assert "aggregate_results.py" in bench
     assert "check_regression.py" in bench
     assert "actions/upload-artifact@v4" in bench
+    assert 'cp "$BASE_TREE/benchmarks/bench_ci.py"' in bench
+    assert 'cp "$BASE_TREE/benchmarks/check_regression.py"' in bench
+    assert 'cp "$CANDIDATE_TREE/benchmarks/check_regression.py"' not in bench
+    assert "ast.dump" in bench
+    assert "module docstring" in bench
+    assert bench.count("--threshold 0.30 --min-abs-us 25") == 4
+    assert '"$EVIDENCE/runs/candidate-a.json" "$EVIDENCE/runs/base-a.json"' in bench
+    assert '"$EVIDENCE/runs/candidate-b.json" "$EVIDENCE/runs/base-b.json"' in bench
+    assert "positive-control-current.json" in bench
+    assert "unexpectedly accepted synthetic slowdown" in bench
+
+
+def test_benchmark_driver_documents_the_enforced_dual_threshold():
+    driver = (ROOT / "benchmarks" / "bench_ci.py").read_text(encoding="utf-8")
+    assert "more than 20%" not in driver
+    assert "greater than 30%" in driver
+    assert "greater than 25" in driver

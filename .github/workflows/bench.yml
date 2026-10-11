@@ -45,10 +45,43 @@ jobs:
           test "$(git -C "$BASE_TREE" rev-parse HEAD)" = "$BASE_SHA"
           test "$(git -C "$CANDIDATE_TREE" rev-parse HEAD)" = "$CANDIDATE_SHA"
           printf 'base=%s\ncandidate=%s\n' "$BASE_SHA" "$CANDIDATE_SHA" | tee "$EVIDENCE/identities.txt"
-          cmp "$BASE_TREE/benchmarks/bench_ci.py" "$CANDIDATE_TREE/benchmarks/bench_ci.py"
-          cp "$CANDIDATE_TREE/benchmarks/bench_ci.py" "$EVIDENCE/driver/bench_ci.py"
-          cp "$CANDIDATE_TREE/benchmarks/aggregate_results.py" "$EVIDENCE/driver/aggregate_results.py"
-          cp "$CANDIDATE_TREE/benchmarks/check_regression.py" "$EVIDENCE/driver/check_regression.py"
+          python3 - "$BASE_TREE/benchmarks/bench_ci.py" "$CANDIDATE_TREE/benchmarks/bench_ci.py" "$EVIDENCE" <<'PY'
+          import ast
+          import hashlib
+          import sys
+          from pathlib import Path
+
+          def executable_dump(path: Path) -> str:
+              tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+              if (
+                  tree.body
+                  and isinstance(tree.body[0], ast.Expr)
+                  and isinstance(tree.body[0].value, ast.Constant)
+                  and isinstance(tree.body[0].value.value, str)
+              ):
+                  tree.body.pop(0)  # Remove only the module docstring.
+              return ast.dump(tree, annotate_fields=True, include_attributes=False)
+
+          base_path, candidate_path, evidence_path = map(Path, sys.argv[1:])
+          base_dump = executable_dump(base_path)
+          candidate_dump = executable_dump(candidate_path)
+          evidence_path.joinpath("base-executable-ast.txt").write_text(base_dump, encoding="utf-8")
+          evidence_path.joinpath("candidate-executable-ast.txt").write_text(candidate_dump, encoding="utf-8")
+          if base_dump != candidate_dump:
+              raise SystemExit("benchmark executable AST differs from protected base")
+          digest = hashlib.sha256(base_dump.encode()).hexdigest()
+          evidence_path.joinpath("executable-ast-sha256.txt").write_text(f"{digest}\n", encoding="utf-8")
+          PY
+          cp "$BASE_TREE/benchmarks/bench_ci.py" "$EVIDENCE/driver/bench_ci.py"
+          cp "$BASE_TREE/benchmarks/check_regression.py" "$EVIDENCE/driver/check_regression.py"
+          if [ -f "$BASE_TREE/benchmarks/aggregate_results.py" ]; then
+            cp "$BASE_TREE/benchmarks/aggregate_results.py" "$EVIDENCE/driver/aggregate_results.py"
+            echo "aggregator=protected-base" | tee "$EVIDENCE/aggregator-source.txt"
+          else
+            test "$BASE_SHA" = "c22213b513d4be167a0704244ad08c54e4ed1984"
+            cp "$CANDIDATE_TREE/benchmarks/aggregate_results.py" "$EVIDENCE/driver/aggregate_results.py"
+            echo "aggregator=bootstrap-candidate-non-authoritative" | tee "$EVIDENCE/aggregator-source.txt"
+          fi
           shasum -a 256 \
             "$BASE_TREE/benchmarks/bench_ci.py" \
             "$CANDIDATE_TREE/benchmarks/bench_ci.py" \
@@ -99,14 +132,24 @@ jobs:
           TMPDIR="$PWD" "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/bench_ci.py" --runs 3 --json > "$EVIDENCE/runs/candidate-b.json"
           cd "$EVIDENCE/work/base-b"
           TMPDIR="$PWD" "$BASE_VENV/bin/python" -I "$EVIDENCE/driver/bench_ci.py" --runs 3 --json > "$EVIDENCE/runs/base-b.json"
-          "$BASE_VENV/bin/python" -I "$EVIDENCE/driver/aggregate_results.py" "$EVIDENCE/runs/base-a.json" "$EVIDENCE/runs/base-b.json" > "$EVIDENCE/base-aggregate.json"
-          "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/aggregate_results.py" "$EVIDENCE/runs/candidate-a.json" "$EVIDENCE/runs/candidate-b.json" > "$EVIDENCE/candidate-aggregate.json"
+          "$BASE_VENV/bin/python" -I "$EVIDENCE/driver/aggregate_results.py" --subject base "$EVIDENCE/runs/base-a.json" "$EVIDENCE/runs/base-b.json" > "$EVIDENCE/base-aggregate.json"
+          "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/aggregate_results.py" --subject candidate "$EVIDENCE/runs/candidate-a.json" "$EVIDENCE/runs/candidate-b.json" > "$EVIDENCE/candidate-aggregate.json"
 
-      - name: Regression check against paired base
+      - name: Verify frozen comparator and paired results
         run: |
+          set -euo pipefail
+          printf '%s\n' '{"env":{"cpu":"control","platform":"control","python":"control"},"scenarios":{"positive_control":{"p99_us":100}}}' > "$EVIDENCE/positive-control-base.json"
+          printf '%s\n' '{"env":{"cpu":"control","platform":"control","python":"control"},"scenarios":{"positive_control":{"p99_us":131}}}' > "$EVIDENCE/positive-control-current.json"
+          if "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/check_regression.py" "$EVIDENCE/positive-control-current.json" "$EVIDENCE/positive-control-base.json" --threshold 0.30 --min-abs-us 25; then
+            echo "FAIL: frozen comparator unexpectedly accepted synthetic slowdown" >&2
+            exit 1
+          fi
+          "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/check_regression.py" "$EVIDENCE/runs/candidate-a.json" "$EVIDENCE/runs/base-a.json" --threshold 0.30 --min-abs-us 25
+          "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/check_regression.py" "$EVIDENCE/runs/candidate-b.json" "$EVIDENCE/runs/base-b.json" --threshold 0.30 --min-abs-us 25
           "$CANDIDATE_VENV/bin/python" -I "$EVIDENCE/driver/check_regression.py" \
             "$EVIDENCE/candidate-aggregate.json" \
-            "$EVIDENCE/base-aggregate.json"
+            "$EVIDENCE/base-aggregate.json" \
+            --threshold 0.30 --min-abs-us 25
 
       - name: Upload paired benchmark evidence
         if: always()
