@@ -15,9 +15,6 @@ jobs:
       CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
       BASE_TREE: ${{ github.workspace }}/.bench/base
       CANDIDATE_TREE: ${{ github.workspace }}/.bench/candidate
-      EVIDENCE: ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}
-      BASE_VENV: ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/base-venv
-      CANDIDATE_VENV: ${{ runner.temp }}/fivedrisk-paired-bench-${{ github.run_id }}/candidate-venv
 
     steps:
       - name: Check out frozen base
@@ -33,6 +30,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           path: .bench/candidate
           persist-credentials: false
+
+      - name: Initialize isolated paths
+        run: |
+          root="$RUNNER_TEMP/fivedrisk-paired-bench-$GITHUB_RUN_ID"
+          echo "EVIDENCE=$root" >> "$GITHUB_ENV"
+          echo "BASE_VENV=$root/base-venv" >> "$GITHUB_ENV"
+          echo "CANDIDATE_VENV=$root/candidate-venv" >> "$GITHUB_ENV"
 
       - name: Verify identities and freeze benchmark instruments
         run: |

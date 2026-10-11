@@ -427,6 +427,8 @@ def test_benchmark_workflow_pairs_frozen_base_and_candidate():
 
     assert "github.event.pull_request.base.sha" in bench
     assert "github.event.pull_request.head.sha" in bench
+    assert "EVIDENCE: ${{ runner.temp }}" not in bench
+    assert 'root="$RUNNER_TEMP/fivedrisk-paired-bench-$GITHUB_RUN_ID"' in bench
     assert bench.count("persist-credentials: false") >= 2
     assert 'git -C "$BASE_TREE" rev-parse HEAD' in bench
     assert 'git -C "$CANDIDATE_TREE" rev-parse HEAD' in bench
