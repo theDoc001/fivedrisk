@@ -176,7 +176,7 @@ class TestOrangeIsHoldNotGo:
         # APPROVE stops WITHOUT a channel (fail-closed), proceeds only WITH one.
         assert sentinel_blocks(APPROVE) is True
         assert sentinel_blocks(APPROVE, has_approval_channel=False) is True
-        assert sentinel_blocks(APPROVE, has_approval_channel=True) is False
+        assert sentinel_blocks(APPROVE, has_approval_channel=True) is True
         # Anything unrecognized stops.
         for junk in ["", "weird", "EXECUTE ", "Block", "allow", "go"]:
             assert sentinel_blocks(junk) is True, f"unrecognized {junk!r} did not stop"

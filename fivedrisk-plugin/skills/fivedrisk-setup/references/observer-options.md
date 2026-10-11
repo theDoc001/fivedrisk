@@ -57,13 +57,20 @@ cost, goodput, errors, misses, and escalations for this deployment.
 
 ## Host packaging boundary
 
-The plugin directory now follows Agent Plugins 1.0 with a root `plugin.json`, a
-schema-specific `.codex-plugin/plugin.json` compatibility manifest, and the auto-discovered `skills/`
-directory. On Codex and other portable hosts it advises and emits configuration; ordinary
-skill execution does not gate tool calls. The same directory retains Claude-specific
-hooks under `.claude-plugin/`; only Claude Code loads those hooks. Add MCP only if the
-product later needs live authenticated data, actions, or persistence; this consulting
-flow does not.
+The plugin follows Agent Plugins 1.0 with a root `plugin.json`, a schema-specific
+`.codex-plugin/plugin.json` compatibility manifest, and the auto-discovered `skills/`
+directory. OpenAI presentation metadata and onboarding are declared in the root extension;
+the compatibility manifest carries the same onboarding path. On ChatGPT, Codex, and other
+portable hosts the public ZIP advises and emits reviewable configuration; ordinary
+skill execution does not gate tool calls.
+
+Lifecycle hooks are available for manual Codex desktop plugins and Claude Code plugins
+when supported by that host. Protocols are host-specific: this release's separate manual
+ZIP contains the reviewed Claude-specific integration, not a Codex hook adapter. A ZIP
+containing lifecycle hooks is not eligible for the public plugin directory. Submit only
+the hooks-free public ZIP; publishing it on GitHub does not mean directory approval.
+Add MCP only if the product later needs live authenticated data, actions, or persistence;
+this consulting flow does not.
 
 Official references:
 

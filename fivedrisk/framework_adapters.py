@@ -7,10 +7,10 @@ tool from running. The frameworks are optional dependencies: importing this modu
 never imports them; the framework symbols are looked up lazily only when a block is
 actually raised, so `import fivedrisk` stays dependency-free.
 
-The gate is fail-closed. A BLOCK verdict stops the tool; an ORANGE (APPROVE) verdict
-also stops it UNLESS you pass ``has_approval_channel=True`` (these pre-tool hooks have
-no synchronous human-approval path, so the safe default is to treat "needs approval"
-as "stop"). Any invalid input or scorer error resolves to BLOCK inside ``to_verdict``.
+The gate is fail-closed. BLOCK and ORANGE (APPROVE) both stop the tool. These hooks
+have no per-call approval exchange; the deprecated ``has_approval_channel`` keyword
+is accepted but ignored. Human review and any authorized continuation belong to the
+host application. Invalid input or scorer errors resolve to BLOCK in ``to_verdict``.
 
 VALIDATION STATUS (read before production): these shims are built against the
 *documented* framework APIs current as of 2026-07 and their translation logic is unit

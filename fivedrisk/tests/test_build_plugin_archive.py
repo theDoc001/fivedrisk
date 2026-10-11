@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -131,6 +133,136 @@ def test_git_archive_is_reproducible_tracked_only_and_cwd_independent(
         }
     assert modes["fivedrisk-plugin/plugin.json"] == 0o644
     assert modes["fivedrisk-plugin/scripts/run"] == 0o755
+
+
+def _distribution_repo(tmp_path: Path) -> tuple[Path, Path, str]:
+    repo = tmp_path / "distribution-repo"
+    source = repo / "fivedrisk-plugin"
+    shutil.copytree(
+        ROOT / "fivedrisk-plugin", source,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store"),
+    )
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.name", "archive test")
+    _git(repo, "config", "user.email", "archive@example.invalid")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "distribution candidate")
+    commit = subprocess.run(
+        ("git", "-C", str(repo), "rev-parse", "HEAD"),
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    return repo, source, commit
+
+
+def test_public_and_manual_variants_share_one_immutable_reproducible_source(tmp_path):
+    _repo, source, commit = _distribution_repo(tmp_path)
+    snapshots = {}
+    for variant in ("public", "manual"):
+        output = tmp_path / f"{variant}.zip"
+        build_plugin_archive.build_from_git(source, output, commit, variant=variant)
+        snapshots[variant] = output.read_bytes()
+    (source / "README.md").write_text("unreviewed changes", encoding="utf-8")
+    (source / "skills" / "fivedrisk-setup" / "secret.txt").write_text("untracked")
+    for variant in ("public", "manual"):
+        output = tmp_path / f"{variant}-again.zip"
+        build_plugin_archive.build_from_git(source, output, commit, variant=variant)
+        assert snapshots[variant] == output.read_bytes()
+
+    with zipfile.ZipFile(io.BytesIO(snapshots["public"])) as public, zipfile.ZipFile(
+        io.BytesIO(snapshots["manual"])
+    ) as manual:
+        public_names = set(public.namelist())
+        manual_names = set(manual.namelist())
+        assert public_names < manual_names
+        for path in public_names:
+            assert public.read(path) == manual.read(path)
+        for path in (
+            "hooks/hooks.json", "scripts/run_hook.py", ".claude-plugin/plugin.json",
+            "manual/README.md", "policy.yaml",
+        ):
+            assert f"fivedrisk-plugin/{path}" in manual_names
+            assert f"fivedrisk-plugin/{path}" not in public_names
+        assert {
+            "fivedrisk-plugin/plugin.json", "fivedrisk-plugin/.codex-plugin/plugin.json",
+            "fivedrisk-plugin/README.md", "fivedrisk-plugin/assets/icon.svg",
+            "fivedrisk-plugin/skills/fivedrisk-setup/SKILL.md",
+            "fivedrisk-plugin/skills/fivedrisk-setup/scripts/verify-install.sh",
+            "fivedrisk-plugin/skills/fivedrisk-setup/scripts/detect_framework.py",
+            "fivedrisk-plugin/skills/fivedrisk-setup/scripts/example_gate.py",
+            "fivedrisk-plugin/skills/fivedrisk-setup/references/examples/goals-description-profile.yaml",
+        } <= public_names
+        for name in public_names:
+            assert not ({"hooks", ".claude-plugin", "manual"} & set(Path(name).parts))
+            if name.endswith((".md", ".py", ".json")):
+                text = public.read(name).decode("utf-8")
+                assert "PreToolUse" not in text
+                assert "PostToolUse" not in text
+                assert '"hooks":' not in text
+        for manifest_path in ("plugin.json", ".codex-plugin/plugin.json"):
+            manifest = json.loads(public.read(f"fivedrisk-plugin/{manifest_path}"))
+            onboarding = manifest["extensions"]["com.openai"]["onboardingSkill"]
+            assert f"fivedrisk-plugin/{onboarding.removeprefix('./')}" in public_names
+        # Every packaged Markdown reference remains usable after extraction.
+        import re
+        import posixpath
+        for name in public_names:
+            if not name.endswith(".md"):
+                continue
+            for link in re.findall(r"\[[^\]]*\]\(([^)]+)\)", public.read(name).decode()):
+                link = link.split("#", 1)[0]
+                if not link or ":" in link:
+                    continue
+                target = posixpath.normpath(posixpath.join(posixpath.dirname(name), link))
+                assert target in public_names, (name, link)
+
+
+@pytest.mark.parametrize("variant", ["public", "manual"])
+def test_distribution_cli_selects_explicit_variant(tmp_path, variant):
+    _repo, source, commit = _distribution_repo(tmp_path)
+    output = tmp_path / "plugin.zip"
+    result = subprocess.run(
+        (sys.executable, "-I", str(ROOT / "tools" / "build_plugin_archive.py"),
+         "--source", str(source), "--git-ref", commit, "--variant", variant,
+         "--output", str(output)),
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    with zipfile.ZipFile(output) as archive:
+        assert ("fivedrisk-plugin/hooks/hooks.json" in archive.namelist()) == (variant == "manual")
+
+
+def test_public_cli_requires_an_immutable_git_input(tmp_path):
+    result = subprocess.run(
+        (sys.executable, "-I", str(ROOT / "tools" / "build_plugin_archive.py"),
+         "--source", str(ROOT / "fivedrisk-plugin"), "--variant", "public",
+         "--epoch", "1800000000", "--output", str(tmp_path / "plugin.zip")),
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 2
+    assert "public plugin archives require --git-ref" in result.stderr
+    assert not (tmp_path / "plugin.zip").exists()
+
+
+@pytest.mark.parametrize("fault", ["hooks", "onboarding", "missing-asset", "compat-hooks"])
+def test_public_archive_rejects_unsafe_or_dangling_manifest_before_replacing(tmp_path, fault):
+    repo, source, _commit = _distribution_repo(tmp_path)
+    path = source / (".codex-plugin/plugin.json" if fault == "compat-hooks" else "plugin.json")
+    manifest = json.loads(path.read_text())
+    openai = manifest.setdefault("extensions", {}).setdefault("com.openai", {})
+    if fault in {"hooks", "compat-hooks"}:
+        openai["hooks"] = "./hooks/hooks.json"
+    elif fault == "onboarding":
+        openai["onboardingSkill"] = "./skills/not-shipped/SKILL.md"
+    else:
+        openai.setdefault("interface", {})["logo"] = "./assets/missing.svg"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "invalid public manifest")
+    output = tmp_path / "existing.zip"
+    output.write_bytes(b"keep")
+    with pytest.raises(RuntimeError, match="public|onboarding|asset|manifest"):
+        build_plugin_archive.build_from_git(source, output, "HEAD", variant="public")
+    assert output.read_bytes() == b"keep"
 
 
 def test_git_archive_rejects_a_tracked_symlink(tmp_path: Path):

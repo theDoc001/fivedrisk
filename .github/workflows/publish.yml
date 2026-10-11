@@ -51,7 +51,11 @@ jobs:
           test -n "$RELEASE_CANDIDATE_TREE"
           test -n "$QA_VERDICT_TREE"
           test "$RELEASE_CANDIDATE_SHA" = "$QA_VERDICT_SHA"
+          test "$RELEASE_CANDIDATE_SHA" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$(git rev-parse --verify HEAD)"
+          test "$RELEASE_CANDIDATE_SHA" = "$(git rev-parse --verify "$RELEASE_CANDIDATE_SHA^{commit}")"
           test "$RELEASE_CANDIDATE_TREE" = "$QA_VERDICT_TREE"
+          test "$RELEASE_CANDIDATE_TREE" = "$(git rev-parse --verify "$RELEASE_CANDIDATE_SHA^{tree}")"
           test "$RELEASE_CANDIDATE_TREE" = "$(git rev-parse "$GITHUB_SHA^{tree}")"
           version=$(python3 -I -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           test "$version" = '0.7.1'
@@ -111,7 +115,12 @@ jobs:
           python -I tools/verify_wheel.py dist/fivedrisk-*.whl
           python -I tools/build_plugin_archive.py \
             --git-ref "$GITHUB_SHA" \
-            --output "dist/fivedrisk-plugin-${{ steps.metadata.outputs.version }}.zip"
+            --variant public \
+            --output "dist/fivedrisk-plugin-public-${{ steps.metadata.outputs.version }}.zip"
+          python -I tools/build_plugin_archive.py \
+            --git-ref "$GITHUB_SHA" \
+            --variant manual \
+            --output "dist/fivedrisk-plugin-manual-${{ steps.metadata.outputs.version }}.zip"
           python -I tools/artifact_checksums.py --write dist
           python -I tools/artifact_checksums.py --verify dist
 

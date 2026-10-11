@@ -52,9 +52,9 @@ class TestQA1NeverDemote:
     def test_sentinel_blocks_semantics(self):
         assert sentinel_blocks(EXECUTE) is False
         assert sentinel_blocks(BLOCK) is True
-        # APPROVE stops WITHOUT an approval channel (fail-closed); proceeds only with one.
+        # A static channel declaration cannot prove approval for this call.
         assert sentinel_blocks(APPROVE) is True
-        assert sentinel_blocks(APPROVE, has_approval_channel=True) is False
+        assert sentinel_blocks(APPROVE, has_approval_channel=True) is True
         # anything unrecognized stops.
         assert sentinel_blocks("weird") is True
 

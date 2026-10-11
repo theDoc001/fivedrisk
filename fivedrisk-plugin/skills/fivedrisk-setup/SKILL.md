@@ -15,16 +15,23 @@ metadata:
 # fivedrisk setup skill
 
 Use this playbook as a deployment consultant first and an installer second. It creates a
-reviewable deployment profile for the actual agent, then puts **fivedrisk** in front of that
-agent's tool calls. It is a security and blast-radius gate, not a judge of whether the
+reviewable deployment profile for the actual agent, then guides the operator in placing
+the **fivedrisk runtime** before that agent's tool calls. The runtime is a security and blast-radius gate, not a judge of whether the
 agent's business answer is correct. Keep consultation, installation, configuration,
 verification, and recovery separate: a plausible profile or successful import is not
 proof that the active adapter or policy is safe.
 
-On portable Agent Plugin hosts, this skill advises, generates reviewable artifacts, and
-verifies configuration; it does not intercept the host's tool calls. Direct tool-call
-enforcement requires a supported runtime adapter. The bundled Claude Code integration is
-the only host-specific plugin integration in this package with direct tool hooks.
+The hooks-free ChatGPT/Codex public artifact is advisory: it generates reviewable
+artifacts and guides configuration checks, but does not intercept the host's tool calls.
+Direct enforcement requires a supported runtime adapter at the actual execution boundary.
+Manually installed Codex desktop and Claude Code plugins can use host-specific hooks when
+available; their protocols are not interchangeable. The separate manual ZIP includes the
+reviewed Claude-specific integration, not a Codex hook adapter, and is not eligible for
+the public plugin directory. Consult the
+[manual integration guide](https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin/manual)
+only when that target is authorized. If this host cannot access the deployment environment,
+produce the design/instructions and ask the operator to run verification there; do not
+claim installation or enforcement was verified remotely.
 
 The frontmatter `metadata.version` is the setup-skill artifact version, not the Python
 package version. This playbook supports stable `fivedrisk>=0.7.1,<0.8.0`; 0.6.x and
@@ -136,10 +143,8 @@ missing distribution metadata, or editable metadata is an incomplete installatio
 Installation does not configure credentials, create an approval channel, or activate a
 framework hook.
 
-For the bundled Claude Code plugin, export the same verified absolute interpreter as
-`FIVEDRISK_PYTHON` before activation. Its launcher blocks with exit 2 when the variable is
-missing, relative, mismatched, or outside the supported stable `>=0.7.1,<0.8.0` version window; it
-does not fall back to a shell-default Python.
+For a separately installed manual host integration, follow its host-specific guide after
+verifying the selected interpreter. The public artifact does not activate lifecycle hooks.
 
 ## Phase 2: Configuration
 
@@ -161,7 +166,7 @@ the tool-execution path protects nothing.
 | **Pydantic AI** | `make_pydantic_process_tool_call` | `MCPToolset(process_tool_call=ptc)` |
 | **Microsoft Agent Framework** | `make_ms_agent_framework_middleware` | `ChatAgent(middleware=mw)` |
 | **LangGraph** | `fivedrisk_gate_node` | `graph.add_node("fivedrisk_gate", node)` |
-| **Claude Code** | CLI hook | PreToolUse/PostToolUse → `"$PYTHON_BIN" -I -m fivedrisk._bootstrap claude-hook` |
+| **Claude Code** | separate manual integration | reviewed host-specific guide, not included in the public artifact |
 | **Vercel AI SDK / Genkit** (Node) | `fivedrisk-gateway` npm pkg | `guardVercelTool` / `guardGenkitTool` |
 | **Anything else** | `@gate` decorator | wrap any function with `@gate(tool_name=...)` |
 
@@ -184,8 +189,10 @@ Validate after every edit:
 
 Treat warnings as unresolved configuration findings, even when validation exits zero.
 Point the adapter at the validated file or set `FIVEDRISK_POLICY_PATH`. Configure once at
-startup, before the first gated action. Set `has_approval_channel=True` only when the
-host genuinely routes ORANGE decisions to a human; otherwise ORANGE must remain blocked.
+startup, before the first gated action. Python framework adapters always hold ORANGE:
+the deprecated `has_approval_channel` flag is ignored because these hooks have no
+per-call approval exchange. Arrange human review in the host application; a static
+channel declaration never authorizes execution. Claude's native hook uses `ask`.
 
 Read [references/configuration-and-recovery.md](references/configuration-and-recovery.md)
 for safe defaults, policy ownership, audit paths, and configuration failure modes.
@@ -241,9 +248,9 @@ would weaken RED/ORANGE handling, stop and ask the user.
 | `ModuleNotFoundError: fivedrisk` | wrong interpreter or package absent there | print the active interpreter; install into that project environment |
 | Policy file is readable but verification fails | YAML or policy semantics are invalid | run `"$PYTHON_BIN" -I -m fivedrisk._bootstrap validate <path>` and fix every error before wiring |
 | Every call blocks (all RED) | tool facts are wrong, or a floor rule is scoped too broadly | inspect `"$PYTHON_BIN" -I -m fivedrisk._bootstrap --format json score '<call>'`; correct the deployment facts or floor scope, never broadly weaken thresholds |
-| ORANGE actions never run | no approval channel wired; ORANGE fails closed | pass `has_approval_channel=True` to the adapter only if you actually route approvals |
+| ORANGE actions never run | framework adapters hold pending human review | implement human review and authorized continuation in the host; the deprecated static flag cannot bypass the hold |
 | Adapter import error at block time | the framework SDK isn't installed | adapters lazy-import their SDK; install it, or use the `@gate` decorator |
-| Claude Code PostToolUse never blocks a leak | wrong output field | the shipped `claude-hook` normalizes `tool_response`/`tool_output`; install a supported stable `>=0.7.1,<0.8.0` release |
+| Manual host integration fails output verification | incompatible payload or runtime | use the matching host-specific guide and supported stable `>=0.7.1,<0.8.0` runtime; do not transplant another host's protocol |
 | Audit logger warns that fallback is active | configured log path is not writable | stop relying on that path; configure an explicit writable durable path, then reverify |
 
 **Debugging a single decision.** The CLI scores one call and prints the full rationale +

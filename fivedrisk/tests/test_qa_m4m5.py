@@ -120,7 +120,7 @@ class TestMSMiddlewareShortCircuit:
         assert nxt.called is False
         assert "blocked by 5D" in ctx.result
 
-    def test_orange_blocks_without_channel_allows_with(self, monkeypatch):
+    def test_orange_holds_even_with_static_channel_declaration(self, monkeypatch):
         _synthetic(monkeypatch, "ORANGE", APPROVE)
         mw = fa.make_ms_agent_framework_middleware()
         ctx = _Ctx("X", {})
@@ -129,14 +129,14 @@ class TestMSMiddlewareShortCircuit:
         assert nxt.called is False
         assert "blocked by 5D" in ctx.result
 
-        # with a declared approval channel, ORANGE runs
+        # A declaration does not consume approval for the pending action.
         _synthetic(monkeypatch, "ORANGE", APPROVE)
         mw2 = fa.make_ms_agent_framework_middleware(has_approval_channel=True)
         ctx2 = _Ctx("X", {})
         nxt2 = _CountingNext()
         _run(mw2, ctx2, nxt2)
-        assert nxt2.count == 1
-        assert ctx2.result is None
+        assert nxt2.count == 0
+        assert "blocked by 5D" in ctx2.result
 
     def test_green_runs_exactly_once_and_leaves_result_untouched(self):
         mw = fa.make_ms_agent_framework_middleware()

@@ -37,8 +37,8 @@ BLOCK = "block"       # deny  (RED, any pre-score input block, any error)
 #   * RED  never maps to anything but BLOCK.
 #   * ORANGE never maps to EXECUTE (it is APPROVE — a hold, not a pass).
 #   * an unknown / unparseable band FAILS CLOSED to BLOCK.
-# Adapters WITHOUT a native approval channel MUST treat APPROVE as BLOCK
-# (fail-closed) — never as EXECUTE. `sentinel_blocks()` encodes that.
+# APPROVE is always a hold. A static host-channel declaration cannot authorize a
+# particular action. `sentinel_blocks()` never turns it into EXECUTE.
 _BAND_SENTINEL: Dict[str, str] = {
     "GREEN": EXECUTE,
     "YELLOW": EXECUTE,
@@ -69,13 +69,12 @@ def band_to_sentinel(band: Any) -> str:
 def sentinel_blocks(sentinel: str, *, has_approval_channel: bool = False) -> bool:
     """Whether an adapter should STOP the tool call for this sentinel.
 
-    EXECUTE never stops. BLOCK always stops. APPROVE stops unless the host has a
-    real approval channel to route it to — a host without one MUST fail closed.
+    EXECUTE never stops; BLOCK and APPROVE always stop. The deprecated
+    ``has_approval_channel`` keyword is accepted for source compatibility but
+    ignored: this helper cannot consume a human approval for the pending call.
     """
     if sentinel == EXECUTE:
         return False
-    if sentinel == APPROVE:
-        return not has_approval_channel
     return True  # BLOCK, or anything unrecognized → stop
 
 

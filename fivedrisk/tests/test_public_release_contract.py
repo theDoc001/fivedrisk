@@ -46,7 +46,8 @@ def _markdown_fences(text: str, language: str) -> list[str]:
 def _workflow_run_block(workflow: str, step_name: str) -> str:
     lines = workflow.splitlines()
     name_index = next(
-        index for index, line in enumerate(lines) if line.strip() == f"name: {step_name}"
+        index for index, line in enumerate(lines)
+        if line.strip().removeprefix("- ") == f"name: {step_name}"
     )
     run_index = next(
         index
@@ -190,6 +191,44 @@ def test_plugin_auto_discovers_only_the_consultant_skill():
     assert "data sensitivity: 1.0" not in shipped_text
 
 
+def test_openai_presentation_and_onboarding_are_complete_in_both_formats():
+    root = ROOT / "fivedrisk-plugin"
+    portable = json.loads((root / "plugin.json").read_text())
+    compat = json.loads((root / ".codex-plugin" / "plugin.json").read_text())
+    metadata = portable["extensions"]["com.openai"]
+    assert metadata["interface"] == compat["interface"]
+    for manifest in (portable, compat):
+        extension = manifest["extensions"]["com.openai"]
+        assert extension["onboardingSkill"] == "./skills/fivedrisk-setup/SKILL.md"
+        assert (root / extension["onboardingSkill"]).is_file()
+        assert "hooks" not in extension
+    interface = metadata["interface"]
+    assert 1 <= len(interface["displayName"]) <= 30
+    assert 1 <= len(interface["shortDescription"]) <= 30
+    assert 1 <= len(interface["longDescription"]) <= 4000
+    assert interface["category"] == "Developer Tools"
+    assert interface["defaultPrompt"]
+    for key in ("logo", "composerIcon"):
+        assert interface[key].startswith("./assets/")
+        assert (root / interface[key]).is_file()
+    import xml.etree.ElementTree as ET
+    icon = ET.parse(root / interface["logo"]).getroot()
+    assert icon.tag.endswith("svg")
+    assert int(icon.attrib["width"]) == int(icon.attrib["height"]) >= 48
+
+
+def test_publisher_builds_both_plugin_variants_before_checksums_and_attestation():
+    publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text()
+    build = _workflow_run_block(publish, "Build one reproducible, checksum-verified artifact set")
+    assert build.count('--git-ref "$GITHUB_SHA"') == 2
+    for variant in ("public", "manual"):
+        assert f"--variant {variant}" in build
+        assert f"dist/fivedrisk-plugin-{variant}-${{{{ steps.metadata.outputs.version }}}}.zip" in build
+    assert build.index("--variant manual") < build.index("tools/artifact_checksums.py --write")
+    assert 'subject-path: "dist/*"' in publish
+    assert 'gh release create "v$VERSION" dist/*' in publish
+
+
 def test_typescript_readme_exports_a_canonical_absolute_interpreter():
     readme = (ROOT / "clients" / "typescript" / "README.md").read_text(
         encoding="utf-8"
@@ -283,23 +322,23 @@ def test_publish_metadata_gate_accepts_only_the_cleared_main_tree(tmp_path):
     script = _workflow_run_block(
         publish, "Bind merged main to the independently cleared tree"
     )
-    tree = subprocess.run(
-        ("git", "rev-parse", "HEAD^{tree}"),
+    sha, tree = subprocess.run(
+        ("git", "rev-parse", "HEAD", "HEAD^{tree}"),
         cwd=ROOT,
         check=True,
         capture_output=True,
         text=True,
-    ).stdout.strip()
+    ).stdout.splitlines()
     base = os.environ.copy()
     base.update(
         {
             "GITHUB_EVENT_NAME": "schedule",
             "GITHUB_REF": "refs/heads/main",
-            "GITHUB_SHA": "HEAD",
+            "GITHUB_SHA": sha,
             "GITHUB_OUTPUT": str(tmp_path / "output"),
             "GITHUB_ENV": str(tmp_path / "environment"),
-            "RELEASE_CANDIDATE_SHA": "qa-subject",
-            "QA_VERDICT_SHA": "qa-subject",
+            "RELEASE_CANDIDATE_SHA": sha,
+            "QA_VERDICT_SHA": sha,
             "RELEASE_CANDIDATE_TREE": tree,
             "QA_VERDICT_TREE": tree,
         }
@@ -334,3 +373,16 @@ def test_publish_metadata_gate_accepts_only_the_cleared_main_tree(tmp_path):
         )
         assert denied.returncode != 0, key
         assert not Path(denied_environment["GITHUB_OUTPUT"]).exists(), key
+
+    for candidate in ("qa-subject", "HEAD", "0" * 40, tree):
+        denied_environment = base | {
+            "RELEASE_CANDIDATE_SHA": candidate,
+            "QA_VERDICT_SHA": candidate,
+            "GITHUB_OUTPUT": str(tmp_path / f"denied-sha-{candidate}"),
+        }
+        denied = subprocess.run(
+            ("bash", "-eu", "-o", "pipefail", "-c", script), cwd=ROOT,
+            env=denied_environment, capture_output=True, text=True, check=False,
+        )
+        assert denied.returncode != 0, candidate
+        assert not Path(denied_environment["GITHUB_OUTPUT"]).exists(), candidate

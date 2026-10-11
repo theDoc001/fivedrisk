@@ -52,8 +52,8 @@ ADAPTERS: List[Adapter] = [
             "from fivedrisk.langgraph_node import fivedrisk_gate_node",
             "graph.add_node('fivedrisk_gate', fivedrisk_gate_node)"),
     Adapter("__claude_code__", "Claude Code (CLI hook)",
-            "# no import — wire the CLI in .claude/settings.json",
-            "PreToolUse/PostToolUse hook -> `<SELECTED_PYTHON> -I -m fivedrisk._bootstrap claude-hook`", node=True),
+            "# no import — separate manual host integration; public skill is advisory",
+            "Review https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin/manual", node=True),
     Adapter("__vercel__", "Vercel AI SDK (Node)",
             "// npm install fivedrisk-gateway",
             f"const gw = new FivedriskGateway({{ command: {json.dumps(sys.executable)} }}); "
@@ -108,7 +108,7 @@ def main() -> int:
     if not any_py:
         print("No Python agent framework detected. That's fine — you can still use the")
         shell_python = shlex.quote(sys.executable)
-        print(f"`@gate` decorator, the CLI (`{shell_python} -I -m fivedrisk._bootstrap score` / `claude-hook`), or the")
+        print(f"`@gate` decorator, the CLI (`{shell_python} -I -m fivedrisk._bootstrap score`), or the")
         print("Node client (`npm install fivedrisk-gateway`) for Vercel/Genkit.")
     return 0
 

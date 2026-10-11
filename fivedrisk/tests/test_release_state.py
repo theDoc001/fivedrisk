@@ -92,3 +92,55 @@ def test_release_allows_matching_partial_and_draft_but_rejects_conflicts():
 def test_out_of_order_state_fails_closed(pypi: str, tag: str, release: str):
     with pytest.raises(release_state.ReleaseStateError, match="out-of-order"):
         release_state.validate_order(pypi, tag, release)
+
+
+def test_expected_artifacts_rejects_symlinks_even_with_matching_manifest(tmp_path: Path):
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    outside = tmp_path / "outside.whl"
+    outside.write_bytes(b"wheel")
+    (dist / "fivedrisk.whl").symlink_to(outside)
+    (dist / "fivedrisk.tar.gz").write_bytes(b"sdist")
+    (dist / "fivedrisk-plugin-0.7.1.zip").write_bytes(b"plugin")
+    # A valid digest cannot turn an indirect filesystem target into an artifact.
+    import hashlib
+    (dist / "SHA256SUMS").write_text("".join(
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+        for path in sorted(dist.iterdir())
+    ), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="symlink|regular"):
+        release_state.expected_artifacts(dist)
+
+
+PUBLIC = "fivedrisk-plugin-public-0.7.1.zip"
+MANUAL = "fivedrisk-plugin-manual-0.7.1.zip"
+
+
+def _local_artifacts(tmp_path: Path, plugins: tuple[str, ...]) -> Path:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    for name in ("fivedrisk-0.7.1-py3-none-any.whl", "fivedrisk-0.7.1.tar.gz", *plugins):
+        (dist / name).parent.mkdir(parents=True, exist_ok=True)
+        (dist / name).write_bytes(name.encode())
+    release_state._CHECKSUMS.write_manifest(dist)
+    return dist
+
+
+def test_release_enumerates_both_exact_versioned_plugin_names(tmp_path):
+    dist = _local_artifacts(tmp_path, (PUBLIC, MANUAL))
+    packages, artifacts = release_state.expected_artifacts(dist, version="0.7.1")
+    assert set(packages) == {"fivedrisk-0.7.1-py3-none-any.whl", "fivedrisk-0.7.1.tar.gz"}
+    assert set(artifacts) == {*packages, PUBLIC, MANUAL, "SHA256SUMS"}
+    assert release_state.expected_artifacts(dist) == (packages, artifacts)
+
+
+@pytest.mark.parametrize("plugins", [
+    (), (PUBLIC,), (MANUAL,), ("fivedrisk-plugin-0.7.1.zip",),
+    (PUBLIC, "fivedrisk-plugin-manual-0.7.0.zip"),
+    (PUBLIC, MANUAL, "fivedrisk-plugin-0.7.1.zip"),
+    (f"nested/{PUBLIC}", MANUAL),
+])
+def test_release_rejects_missing_misnamed_or_extra_plugin_artifacts(tmp_path, plugins):
+    dist = _local_artifacts(tmp_path, plugins)
+    with pytest.raises(release_state.ReleaseStateError, match="public.*manual|artifact set"):
+        release_state.expected_artifacts(dist, version="0.7.1")

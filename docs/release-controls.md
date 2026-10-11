@@ -26,13 +26,18 @@ python3 -I tools/repository_rulesets.py --check --repository theDoc001/fivedrisk
 These rules require pull requests and the release-window, Python, and TypeScript checks
 on the default branch, and make `v*` tags immutable after creation. The scheduled
 publisher binds the merged default-branch commit to the independently cleared
-candidate tree, builds one reproducible artifact set, includes a versioned portable
-plugin ZIP, emits a
+candidate commit and tree, builds one reproducible artifact set, includes both
+`fivedrisk-plugin-public-0.7.1.zip` (hooks-free advisory directory candidate) and
+`fivedrisk-plugin-manual-0.7.1.zip` (reviewed Claude-specific local integration), emits a
 root-relative `SHA256SUMS`, creates GitHub build provenance attestations, and reconciles
 PyPI, an annotated tag, and the GitHub release in order. A matching partial release
 resumes; any wrong digest, SHA, tag form, asset, ordering, or unverifiable remote
 response stops without overwriting or deleting data. OpenAI directory review and
 publication remain a separate human portal step; the workflow does not impersonate it.
+The checksum and remote-state checks require both exact versioned ZIP names, the wheel,
+and the source distribution. Hook-containing ZIPs are not directory eligible. The
+public ZIP must be built with `--variant public --git-ref <cleared-commit>`; do not upload
+the manual ZIP or the complete source directory to a public plugin portal.
 
 Publication has no manual workflow trigger. Two UTC schedules cover the Europe/Tirane
 DST variants; one becomes the active 19:05 local slot and the other exits without

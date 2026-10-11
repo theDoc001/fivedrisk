@@ -1,87 +1,59 @@
 # fivedrisk - 5D Risk Governance Plugin
 
-Per-action risk governance for AI agents. Scores every tool call on 5 dimensions
-(Data, Tool, Reversibility, External, Autonomy), assigns a **GREEN / YELLOW /
-ORANGE / RED** band, and gates execution: GREEN/YELLOW execute, ORANGE routes to
-Claude's native approval prompt, RED is denied. A PostToolUse hook also scans tool output for
-leakage. Every decision is logged to a local SQLite audit trail.
+A deployment consultant for per-action AI-agent risk governance. Start with a redacted
+system prompt or a description of the agent's goals and likely actions. The skill helps
+you confirm deployment facts, design a 5D profile, compare deterministic-only governance
+with observer-LLM or TypeSafe Jev designs, configure a supported runtime adapter, and
+verify the real execution boundary. The profile is not runtime configuration, and no
+observer runtime is bundled.
 
 The plugin manifest version follows the bundled package/repository release. The
 setup skill has its own independently managed artifact version.
 
-The setup skill starts as a 5D deployment consultant. It can derive a reviewable
-deployment profile from either a redacted agent system prompt or a description of the
-agent's goals and likely actions, then compare deterministic-only governance with general
-observer-LLM and TypeSafe Jev designs. The profile is not runtime configuration, and no
-observer runtime is bundled.
+## Choose the right artifact
 
-This directory is a portable Agent Plugin with one auto-discovered setup skill. Codex and
-other compatible hosts can use the skill for deployment consultation, configuration,
-verification, and recovery. Skill execution is advisory and does not intercept tool calls.
+Both release ZIPs are deterministic builds of the same immutable Git commit and contain
+the same consultant skill, references, examples, and installation/verification helpers.
 
-The same directory is also a Claude Code plugin. Only Claude Code loads the bundled
-`PreToolUse` and `PostToolUse` hooks, so only that host integration can gate tool calls
-directly. Other agents must wire one of the supported runtime adapters before claiming
-enforcement.
+| Artifact | Purpose | Enforcement boundary |
+|---|---|---|
+| `fivedrisk-plugin-public-0.7.1.zip` | Hooks-free ChatGPT/Codex public-directory submission candidate | Advisory only; no automatic host enforcement |
+| `fivedrisk-plugin-manual-0.7.1.zip` | Manually reviewed local integration | Includes the reviewed Claude-specific hooks; requires verified runtime setup |
 
-The root `plugin.json` is the portable manifest. `.codex-plugin/plugin.json` is its
-schema-specific Codex compatibility projection with presentation metadata, and
-`.claude-plugin/plugin.json` owns Claude-specific hook metadata. The plugin intentionally
-ships one skill: `fivedrisk-setup`.
+Skill execution is advisory and does not intercept tool calls. In ChatGPT, Codex, and
+other compatible hosts, installing the public artifact does not install the Python
+runtime, configure a live agent, or make its tools safe. A supported runtime adapter must
+sit on the actual execution path before you claim enforcement. If the host cannot access
+that environment, use the consultation and configuration artifacts, and have the operator
+run the checks there.
 
-## Load this local plugin
+Manually installed Codex desktop plugins and Claude Code plugins can use host-specific
+lifecycle hooks when available. Hook protocols are not interchangeable: this release's
+reviewed integration is Claude-specific, not a Codex hook implementation. Do not enable
+the Claude launcher in Codex. Any ZIP containing lifecycle hooks is **not eligible for the public plugin directory**;
+submit only the `public` ZIP. GitHub publication is not OpenAI directory approval.
 
-This repository does not yet publish a Claude marketplace entry. Clone or unpack
-the repository, review the plugin, then start Claude Code with the official local
-development form:
+The root `plugin.json` is the portable manifest. OpenAI presentation metadata and
+`onboardingSkill` live under `extensions.com.openai`; the onboarding path resolves to the
+packaged `./skills/fivedrisk-setup/SKILL.md`. `.codex-plugin/plugin.json` is the compatibility
+projection. Root OpenAI settings replace, rather than merge with, the compatibility
+settings. Both identify the same one auto-discovered skill: `fivedrisk-setup`.
 
-```bash
-PLUGIN_ROOT=/absolute/path/to/fivedrisk-plugin
-export FIVEDRISK_PYTHON=/absolute/path/to/.venv/bin/python
-PYTHON_BIN="$FIVEDRISK_PYTHON" bash "$PLUGIN_ROOT/skills/fivedrisk-setup/scripts/verify-install.sh"
-claude --plugin-dir "$PLUGIN_ROOT"
-```
+## Start the consultation
 
-Claude supplies `$CLAUDE_PLUGIN_ROOT` while an installed or locally loaded plugin
-hook is running; users do not export it. Use the explicit `PLUGIN_ROOT` variable
-for manual verification before startup.
+After installing the advisory package in a compatible host, run its setup action or ask:
+“Use fivedrisk-setup to design a 5D risk profile for my agent.” Provide only a redacted
+prompt or goals/boundaries description—never credentials, customer data, or unnecessary
+proprietary content. Confirm the extracted facts before generating runtime policy.
 
-The launcher rejects a missing, relative, mismatched, or unsupported interpreter
-with blocking exit code 2. It never falls back to `python`, `python3`, or PATH.
-The outer hook command itself uses Python isolated mode before the launcher imports
-standard-library modules. The launcher then starts the installed package in isolated mode through a bootstrap that
-verifies the distribution location and stable version `>=0.7.1,<0.8.0`, preventing a
-working-directory or `PYTHONPATH` package from shadowing the verified installation.
-It also validates and canonicalizes the child command's structured hook result;
-empty, malformed, wrong-event, incomplete, or ambiguous output blocks with exit 2.
+For manual hook installation, review `manual/README.md` inside the manual ZIP or the
+[manual integration guide](https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin/manual).
+The source directory contains that manual integration; do not upload the whole directory
+to a public-directory portal. No Claude marketplace entry is claimed.
 
-## How it works
-
-The plugin uses the all-tool matcher for both PreToolUse and PostToolUse, including
-built-in, task, notebook, and MCP tools. PreToolUse gates before execution;
-PostToolUse can stop further processing after a result but cannot undo a completed tool.
-Each action is scored across 5 risk dimensions:
-
-1. **Data Sensitivity** (0-4)
-2. **Tool Privilege** (0-4)
-3. **Reversibility** (0-4)
-4. **External Impact** (0-4)
-5. **Autonomy Context** (0-4)
-
-Default dispositions:
-- **GREEN / YELLOW** — execute and log (YELLOW is opt-in and logs more detail)
-- **ORANGE** — emit Claude's structured `ask` decision for human approval
-- **RED** — deny
-
-These are the plugin's shipped mappings. The band itself is the audit-stable
-severity label; other integrations may map a band to a different disposition.
-
-## Configuration
-
-The bundled `policy.yaml` is a starter template; the hook does not load it
-automatically. Copy it to an operator-owned path, validate that copy, and add
-its absolute path as `FIVEDRISK_POLICY_PATH`. The fail-closed launcher passes it
-to the PreToolUse score command. Do not edit the bundled template in place.
+Public directory submission still requires publisher-owned listing/privacy information,
+host installation/onboarding checks, and portal review. The manifest does not invent
+privacy/terms URLs or claim that those human publication steps have already happened.
 
 ## License
 

@@ -37,12 +37,11 @@ loader so one implementation decides each invariant.
 7. Validate the policy. Resolve both validation errors and warnings before activation.
 8. Wire one adapter once, at the actual pre-execution boundary.
 
-For the bundled Claude Code plugin, `FIVEDRISK_PYTHON` must be the absolute path of the
-same verified interpreter used for installation. The hook launcher uses isolated mode,
-checks that it is the running interpreter, and requires the installed distribution to be
-stable `>=0.7.1,<0.8.0`. Set
-`FIVEDRISK_POLICY_PATH` to the absolute operator-owned policy copy when using a custom
-policy; a missing or unreadable path blocks PreToolUse. There is no PATH fallback.
+The public ChatGPT/Codex skill is advisory and does not activate host lifecycle hooks.
+For the separate manual integration, use its host-specific guide and the same verified
+interpreter used for installation. This release's manual launcher is Claude-specific,
+not a Codex hook adapter. The public ZIP omits its configuration, launcher, and starter
+policy. Manual hook packages are not eligible for the public plugin directory.
 
 Do not silently enable a human-approval flag. If the host has no real approval channel,
 ORANGE stays blocked. When the host can provide a stable session identifier, require it

@@ -11,7 +11,6 @@ import importlib.util
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -373,14 +372,17 @@ def test_observer_contract_is_monotonic_fail_closed_and_design_only():
     assert "thresholds remain `uncalibrated`" in text
 
 
-def test_host_packaging_claims_keep_portable_advice_separate_from_claude_hooks():
+def test_host_packaging_claims_keep_public_advice_separate_from_manual_hooks():
     observer = OBSERVER_OPTIONS.read_text(encoding="utf-8")
     readme = (DEV / "fivedrisk-plugin" / "README.md").read_text(encoding="utf-8")
     combined = observer + readme
     assert "root `plugin.json`" in observer
     assert "`.codex-plugin/plugin.json` compatibility manifest" in observer
     assert "ordinary\nskill execution does not gate tool calls" in observer
-    assert "only Claude Code loads those hooks" in observer
+    assert "manual Codex desktop" in observer
+    assert "Claude-specific" in observer
+    assert "not eligible for the public plugin directory" in combined
+    assert "only Claude Code loads those hooks" not in combined
     assert "Skill execution is advisory and does not intercept tool calls" in readme
     assert "Add MCP only if" in observer
 
@@ -495,16 +497,15 @@ def test_command_emitting_helpers_use_resolved_interpreter(tmp_path):
     assert sys.executable in example.stdout
 
 
-def test_detector_shell_commands_round_trip_interpreter_with_shell_characters(tmp_path, monkeypatch):
+def test_detector_routes_claude_to_manual_guide_without_lifecycle_configuration(tmp_path, monkeypatch):
     selected = tmp_path / "python's env" / "selected python"
     mod = _load_detect()
     monkeypatch.setattr(mod.sys, "executable", str(selected))
     row = next(item for item in mod.detect() if item["framework"] == "Claude Code (CLI hook)")
-    match = re.search(r"hook -> `([^`]+)`", row["wiring"])
-    assert match is not None
-    assert shlex.split(match.group(1)) == [
-        str(selected), "-I", "-m", "fivedrisk._bootstrap", "claude-hook",
-    ]
+    assert "https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin/manual" in row["wiring"]
+    assert "public skill is advisory" in row["wiring_import"]
+    assert str(selected) not in row["wiring"]
+    assert "claude-hook" not in row["wiring"]
 
 
 def test_bundled_helpers_run_from_an_unrelated_working_directory(tmp_path):
@@ -614,7 +615,7 @@ def test_verify_install_enforces_supported_stable_version(tmp_path, version, acc
 
 
 def test_documented_claude_hook_quotes_interpreter_paths_with_spaces(tmp_path):
-    text = (SKILL / "references" / "adapters.md").read_text(encoding="utf-8")
+    text = (DEV / "fivedrisk-plugin" / "manual" / "README.md").read_text(encoding="utf-8")
     section = text.split("## Claude Code (CLI hooks)", 1)[1]
     settings = json.loads(re.search(r"```json\n(.*?)\n```", section, re.S).group(1))
     executable = tmp_path / "python env" / "selected python"

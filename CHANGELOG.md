@@ -30,6 +30,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The TypeScript gateway requires an explicit Python command, rejects incompatible
   handshakes, keeps ORANGE blocked despite the deprecated approval-channel flag,
   lets any `error` property dominate, and converts serialization/write failures to BLOCK.
+- Python framework adapters and the shared sentinel helper likewise always hold
+  ORANGE. The accepted `has_approval_channel` keyword is now ignored: a static
+  declaration does not approve an individual call. Host applications own human
+  review and authorized continuation; Claude's native hook still returns `ask`.
 - The Claude plugin uses structured all-tool hooks, normalizes every supported output
   field, and validates/canonicalizes the child JSON schema. Empty, malformed,
   wrong-event, incomplete, or ambiguous successful output fails closed.
@@ -58,10 +62,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   derives a non-runtime deployment profile from either a redacted system prompt or an agent
   goals/boundaries description, preserves unknowns instead of guessing, and compares
   deterministic-only governance with design-only general observer-LLM and TypeSafe Jev
-  options. No production observer integration or OpenAI plugin is claimed as shipped.
-- The plugin now includes a portable Agent Plugins 1.0 manifest plus a schema-specific
-  Codex compatibility manifest. Portable hosts receive the advisory `fivedrisk-setup` skill;
-  Claude Code remains the only bundled host with direct tool-call hooks.
+  options. No production observer integration or OpenAI directory approval is claimed.
+- The plugin includes root OpenAI presentation metadata and packaged onboarding, plus
+  a matching Codex compatibility manifest. The release builds two deterministic ZIPs
+  from the same immutable commit: `fivedrisk-plugin-public-0.7.1.zip` is hooks-free and
+  advisory; `fivedrisk-plugin-manual-0.7.1.zip` retains the reviewed Claude integration.
+  Manual Codex desktop can support host-specific hooks, but no Codex hook adapter ships
+  here. Hook-containing packages are not eligible for the public plugin directory.
 - The legacy instruction-only `five-d-score` skill was removed because its static weights
   and verdict thresholds duplicated and could contradict the configured runtime. Use
   `fivedrisk-setup` with a supported runtime adapter instead.
@@ -72,8 +79,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   GitHub rulesets protect the default branch and make release tags immutable.
 - Publication now runs the TypeScript release gate, emits verifiable root-relative
   checksums, normalizes source-distribution metadata, attests one reproducible artifact
-  set (including a portable plugin ZIP) to the cleared commit, and safely
+  set (including both exact versioned public/manual plugin ZIPs) to the cleared commit, and safely
   resumes only matching partial PyPI/tag/GitHub release states. Conflicts fail closed.
+- Scheduled publication binds the cleared commit to the actual workflow commit and
+  resolves its Git tree. Wheel and source-archive checks reject unsafe names,
+  duplicates, conflicting paths, links, devices, privileged modes and ambiguous
+  archive framing. Checksum and release-artifact enumeration reject symlinks,
+  including indirect roots, parents and manifests, using no-follow filesystem opens.
 - The TypeScript client now requires a complete, well-typed scored response before
   GREEN/YELLOW can execute. Incomplete, contradictory, or non-finite protocol frames
   resolve to synthetic RED/block; a complete pre-score denial remains a blocking frame.

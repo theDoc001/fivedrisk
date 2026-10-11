@@ -180,7 +180,7 @@ def test_plugin_policy_ownership_and_hook_files_are_truthful():
     manifest = json.loads(
         (plugin / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
     )
-    readme = (plugin / "README.md").read_text(encoding="utf-8")
+    readme = (plugin / "manual" / "README.md").read_text(encoding="utf-8")
     template = (plugin / "policy.yaml").read_text(encoding="utf-8")
     assert set(hooks["hooks"]) == {"PreToolUse", "PostToolUse"}
     assert all(hooks["hooks"][phase][0]["matcher"] == "*" for phase in hooks["hooks"])

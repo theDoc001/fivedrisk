@@ -42,19 +42,34 @@ class ReleaseState:
     release_is_draft: bool
 
 
-def expected_artifacts(dist: Path) -> tuple[dict[str, str], dict[str, str]]:
+def expected_artifacts(dist: Path, *, version: str | None = None) -> tuple[dict[str, str], dict[str, str]]:
     verify_manifest(dist)
-    package_paths = sorted((*dist.glob("*.whl"), *dist.glob("*.tar.gz")))
-    if len(package_paths) != 2:
+    artifact_paths = _CHECKSUMS.files(dist)
+    package_paths = [path for path in artifact_paths if path.parent == dist and (path.name.endswith(".whl") or path.name.endswith(".tar.gz"))]
+    if len(package_paths) != 2 or sum(path.name.endswith(".whl") for path in package_paths) != 1:
         raise ReleaseStateError("expected exactly one wheel and one source distribution")
+    wheel = next(path for path in package_paths if path.name.endswith(".whl"))
+    if version is None:
+        parts = wheel.name.split("-")
+        if len(parts) < 5 or parts[0] != "fivedrisk":
+            raise ReleaseStateError("cannot infer release version from wheel name")
+        version = parts[1]
+    if not wheel.name.startswith(f"fivedrisk-{version}-") or not any(
+        path.name == f"fivedrisk-{version}.tar.gz" for path in package_paths
+    ):
+        raise ReleaseStateError("package artifact set does not match the release version")
     package = {path.name: digest(path) for path in package_paths}
     release = {
         path.name: digest(path)
-        for path in sorted(dist.iterdir())
-        if path.is_file() and path.name != MANIFEST_NAME
+        for path in artifact_paths
+        if path.parent == dist
     }
-    if not any(name.startswith("fivedrisk-plugin-") and name.endswith(".zip") for name in release):
-        raise ReleaseStateError("expected one versioned fivedrisk plugin ZIP")
+    plugins = {
+        f"fivedrisk-plugin-public-{version}.zip",
+        f"fivedrisk-plugin-manual-{version}.zip",
+    }
+    if set(release) != set(package) | plugins or len(release) != len(artifact_paths):
+        raise ReleaseStateError("expected exact public and manual plugin artifact set")
     release[MANIFEST_NAME] = digest(dist / MANIFEST_NAME)
     return package, release
 
@@ -203,7 +218,7 @@ def _release_payload(repository: str, version: str) -> dict | None:
 
 
 def inspect(version: str, candidate_sha: str, dist: Path, repository: str) -> ReleaseState:
-    packages, release_artifacts = expected_artifacts(dist)
+    packages, release_artifacts = expected_artifacts(dist, version=version)
     pypi_payload = _json_url(
         f"https://pypi.org/pypi/fivedrisk/{version}/json", missing_is_none=True
     )
