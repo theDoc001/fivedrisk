@@ -13,9 +13,10 @@ Regression detection (post-CI):
     python benchmarks/bench_ci.py --json > current.json
     python benchmarks/check_regression.py current.json baselines/main.json
 
-The check_regression.py companion script flags any operation where p99
-increased by more than 20% vs the baseline. Both scripts are
-self-contained; no dependencies beyond fivedrisk and the stdlib.
+The check_regression.py companion script flags an operation only when p99
+moves by greater than 30% and greater than 25 microseconds versus the paired
+base measurement. Both scripts are self-contained; no dependencies beyond
+fivedrisk and the stdlib.
 """
 
 from __future__ import annotations
