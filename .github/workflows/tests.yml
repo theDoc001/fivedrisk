@@ -29,3 +29,48 @@ jobs:
 
       - name: Run pytest
         run: pytest fivedrisk/tests/ -q --maxfail=10
+
+  typescript-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install non-editable Python gateway
+        run: python -m pip install .
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clients/typescript/package-lock.json
+
+      - name: Install TypeScript toolchain
+        working-directory: clients/typescript
+        run: npm ci
+
+      - name: Typecheck and build
+        working-directory: clients/typescript
+        run: |
+          npm run typecheck
+          npm run build
+
+      - name: Run TypeScript unit tests
+        working-directory: clients/typescript
+        run: node --test dist/gateway.test.js dist/qa_m4.test.js
+
+      - name: Run live Python gateway integration with zero skips
+        working-directory: clients/typescript
+        env:
+          FIVEDRISK_PY: ${{ env.pythonLocation }}/bin/python
+        run: |
+          test -x "$FIVEDRISK_PY"
+          node --test dist/integration.test.js

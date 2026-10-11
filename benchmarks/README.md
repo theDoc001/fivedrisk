@@ -14,15 +14,9 @@ The attack-class benchmark is an expectation-match harness. A passing run means 
 
 ## Regression detection
 
-CI runs `bench_ci.py --json > bench_current.json` on every PR and compares against `benchmarks/baselines/main.json`. Any scenario where p99 increased by more than **30%** relative to a comparable baseline fails the workflow (30%, not 20%, because single-run p99 on shared CI runners is heavy-tailed — see the rationale in `check_regression.py`). The CI job runs on `macos-latest` (arm64/Darwin) to match the committed baseline. If CPU or platform still differs from the baseline, the checker now **fails** (it no longer silently skips) and prints both environments so the baseline gets regenerated on the right platform.
+On every PR, CI runs 12 fresh-process crossover blocks on the same `macos-latest` runner with Python 3.14.6: six ABBA and six BAAB blocks, where A is protected base and B is the candidate. Each block produces a position-balanced relative and absolute p99 effect. Protected-base tools aggregate the median effect overall and by crossover design; all three populations must stay within either the **30%** relative or **25µs** absolute limit. A disagreement between populations is inconclusive and blocks release. Environment, dependency, workload, scenario, metric, structure, or run-count mismatches fail closed, and CI uploads all raw and diagnostic evidence.
 
-To establish or refresh the baseline:
-
-1. Push to main and wait for the bench workflow to complete.
-2. Download the `bench-results-<run_id>` artifact.
-3. Copy the JSON to `benchmarks/baselines/main.json` and commit.
-
-For strongest CI enforcement, refresh the baseline from the same runner class used by the benchmark workflow.
+`benchmarks/baselines/main.json` is retained as a historical reference; it is not the PR merge gate. Never derive a reference baseline from candidate measurements or use a baseline refresh to waive a failing paired comparison.
 
 The threshold is tunable via `python benchmarks/check_regression.py current.json baseline.json --threshold 0.15` (for stricter 15% rule, etc).
 
