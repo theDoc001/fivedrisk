@@ -79,8 +79,11 @@ def _validate(records: list[Record]) -> tuple[dict, tuple[str, ...], dict[str, t
 
     for record in records:
         value = record.value
-        if value.get("runs") != 1:
-            raise ValueError(f"{record.path.name}: runs must be the positive integer 1")
+        # bench_ci.py preserves its historical single-run schema and only adds
+        # ``runs`` when more than one repetition is requested.  The workflow
+        # invokes ``--runs 1``, so an omitted field is the canonical value 1.
+        if value.get("runs", 1) != 1:
+            raise ValueError(f"{record.path.name}: runs must be absent or the positive integer 1")
         if value.get("env") != environment:
             raise ValueError(f"{record.path.name}: benchmark environment mismatch")
         current_scenarios = value.get("scenarios")

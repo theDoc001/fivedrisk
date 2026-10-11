@@ -154,7 +154,7 @@ Full vocabulary and the disposition ladder (`EXECUTE` / `LOG_ELEVATED` / `ROUTE_
 - **Security policy** — supported versions, how to report a vulnerability, and the advisory for 0.6.0 and earlier: [`SECURITY.md`](SECURITY.md).
 - **Policy floor enforcement** — floor rules in `policy.yaml` cannot be overridden at runtime.
 - **Defence-in-depth test suite** — see [Benchmark and test suite](#benchmark-and-test-suite) for the full attack-class coverage.
-- **879 tests** (1540 cases once parametrised). The card-number acceptance corpus
+- **880 tests** (1541 cases once parametrised). The card-number acceptance corpus
   previously carried one deliberate red test, where two arms required opposite verdicts on inputs
   identical in every observable a digits-only rule has. That turned out to be a corpus
   specification error rather than an implementation gap: the relation it asserted (grouping is
@@ -599,7 +599,7 @@ fivedrisk/
 ├── langgraph_node.py# LangGraph integration
 ├── gateway.py       # JSON-lines gateway for non-Python hosts
 ├── benchmarks.py    # 39-case offline benchmark harness
-└── tests/           # 879 tests
+└── tests/           # 880 tests
 
 clients/typescript/  # fivedrisk-gateway npm package (Vercel AI SDK + Genkit)
 ```

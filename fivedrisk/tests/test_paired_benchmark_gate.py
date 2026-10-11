@@ -13,6 +13,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 AGGREGATOR = ROOT / "benchmarks" / "aggregate_paired_results.py"
 CHECKER = ROOT / "benchmarks" / "check_regression.py"
+DRIVER = ROOT / "benchmarks" / "bench_ci.py"
 
 
 def _measurement(p99_us: float, *, runs: int = 1) -> dict:
@@ -77,6 +78,45 @@ def test_paired_aggregator_classifies_stable_pass(tmp_path):
     assert diagnostics["scenarios"]["steady"]["classification"] == "pass"
     assert diagnostics["pair_count"] == 12
     assert diagnostics["order_counts"] == {"base-first": 6, "candidate-first": 6}
+
+
+def test_single_run_driver_schema_is_accepted_by_aggregator(tmp_path):
+    generated = subprocess.run(
+        (sys.executable, "-I", str(DRIVER), "--runs", "1", "--json"),
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
+    assert generated.returncode == 0, generated.stderr
+    measurement = json.loads(generated.stdout)
+    assert "runs" not in measurement
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    for pair in range(1, 13):
+        order = "base-first" if pair % 2 else "candidate-first"
+        for subject in ("base", "candidate"):
+            path = runs / f"pair-{pair:02d}-{order}-{subject}.json"
+            path.write_text(json.dumps(measurement), encoding="utf-8")
+
+    output = tmp_path / "summaries"
+    result = subprocess.run(
+        (
+            sys.executable,
+            "-I",
+            str(AGGREGATOR),
+            "--input-dir",
+            str(runs),
+            "--output-dir",
+            str(output),
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads((output / "diagnostics.json").read_text())["pair_count"] == 12
 
 
 def test_paired_aggregator_classifies_stable_regression(tmp_path):
