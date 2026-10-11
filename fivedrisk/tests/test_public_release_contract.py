@@ -400,3 +400,21 @@ def test_publish_metadata_gate_accepts_only_the_cleared_main_tree(tmp_path):
         )
         assert denied.returncode != 0, candidate
         assert not Path(denied_environment["GITHUB_OUTPUT"]).exists(), candidate
+
+
+def test_release_workflows_pin_benchmark_runtime_to_baseline():
+    publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text(
+        encoding="utf-8"
+    )
+    bench = (ROOT / ".github" / "workflows" / "bench.yml").read_text(
+        encoding="utf-8"
+    )
+    baseline = json.loads(
+        (ROOT / "benchmarks" / "baselines" / "main.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert "tomllib" not in publish
+    assert "sed -n '/^\\[project\\]$/,/^\\[/" in publish
+    assert f'python-version: "{baseline["env"]["python"]}"' in bench

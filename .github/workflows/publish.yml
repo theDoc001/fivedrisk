@@ -57,7 +57,7 @@ jobs:
           test "$RELEASE_CANDIDATE_TREE" = "$QA_VERDICT_TREE"
           test "$RELEASE_CANDIDATE_TREE" = "$(git rev-parse --verify "$RELEASE_CANDIDATE_SHA^{tree}")"
           test "$RELEASE_CANDIDATE_TREE" = "$(git rev-parse "$GITHUB_SHA^{tree}")"
-          version=$(python3 -I -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          version=$(sed -n '/^\[project\]$/,/^\[/s/^version = "\([^"]*\)"$/\1/p' pyproject.toml)
           test "$version" = '0.7.1'
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"

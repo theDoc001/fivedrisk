@@ -14,7 +14,7 @@ The attack-class benchmark is an expectation-match harness. A passing run means 
 
 ## Regression detection
 
-CI runs `bench_ci.py --json > bench_current.json` on every PR and compares against `benchmarks/baselines/main.json`. Any scenario where p99 increased by more than **30%** relative to a comparable baseline fails the workflow (30%, not 20%, because single-run p99 on shared CI runners is heavy-tailed — see the rationale in `check_regression.py`). The CI job runs on `macos-latest` (arm64/Darwin) to match the committed baseline. If CPU or platform still differs from the baseline, the checker now **fails** (it no longer silently skips) and prints both environments so the baseline gets regenerated on the right platform.
+CI runs `bench_ci.py --json > bench_current.json` on every PR and compares against `benchmarks/baselines/main.json`. Any scenario where p99 increased by more than **30%** relative to a comparable baseline fails the workflow (30%, not 20%, because single-run p99 on shared CI runners is heavy-tailed — see the rationale in `check_regression.py`). The CI job pins Python 3.14.6 and runs on `macos-latest` (arm64/Darwin) to match the committed baseline. If the CPU, platform, or exact Python version differs from the baseline, the checker **fails** (it never silently skips) and prints both environments so the runner or baseline can be corrected.
 
 To establish or refresh the baseline:
 

@@ -1,7 +1,8 @@
 """Compare a current bench_ci.py output against a baseline.
 
-Flags any scenario where p99 increased by more than 20% relative to the
-baseline. Exits 0 if all scenarios pass, 1 if any regression detected.
+Flags any scenario where p99 crosses both the configured relative and absolute
+limits (30% and 25 microseconds by default). Exits 0 if all scenarios pass, 1
+if the environment is incomparable or any regression is detected.
 
 Usage:
     python benchmarks/bench_ci.py --json > current.json
@@ -50,7 +51,7 @@ def main() -> int:
 
     current_env = current.get("env", {})
     baseline_env = baseline.get("env", {})
-    comparable_keys = ("cpu", "platform")
+    comparable_keys = ("cpu", "platform", "python")
     env_mismatches = [
         key
         for key in comparable_keys
