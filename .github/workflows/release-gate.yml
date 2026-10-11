@@ -1,0 +1,21 @@
+name: Release window audit
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  release-window:
+    name: release-window
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Audit merge time
+        run: python -I tools/release_window.py --action merge
