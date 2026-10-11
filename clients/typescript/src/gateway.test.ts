@@ -39,5 +39,5 @@ test("sentinelBlocks: fail-closed semantics", () => {
   assert.equal(sentinelBlocks("execute" as Sentinel), false);
   assert.equal(sentinelBlocks("block" as Sentinel), true);
   assert.equal(sentinelBlocks("approve" as Sentinel), true);
-  assert.equal(sentinelBlocks("approve" as Sentinel, { hasApprovalChannel: true }), false);
+  assert.equal(sentinelBlocks("approve" as Sentinel, { hasApprovalChannel: true }), true);
 });

@@ -37,8 +37,8 @@ BLOCK = "block"       # deny  (RED, any pre-score input block, any error)
 #   * RED  never maps to anything but BLOCK.
 #   * ORANGE never maps to EXECUTE (it is APPROVE — a hold, not a pass).
 #   * an unknown / unparseable band FAILS CLOSED to BLOCK.
-# Adapters WITHOUT a native approval channel MUST treat APPROVE as BLOCK
-# (fail-closed) — never as EXECUTE. `sentinel_blocks()` encodes that.
+# APPROVE is always a hold. A static host-channel declaration cannot authorize a
+# particular action. `sentinel_blocks()` never turns it into EXECUTE.
 _BAND_SENTINEL: Dict[str, str] = {
     "GREEN": EXECUTE,
     "YELLOW": EXECUTE,
@@ -69,13 +69,12 @@ def band_to_sentinel(band: Any) -> str:
 def sentinel_blocks(sentinel: str, *, has_approval_channel: bool = False) -> bool:
     """Whether an adapter should STOP the tool call for this sentinel.
 
-    EXECUTE never stops. BLOCK always stops. APPROVE stops unless the host has a
-    real approval channel to route it to — a host without one MUST fail closed.
+    EXECUTE never stops; BLOCK and APPROVE always stop. The deprecated
+    ``has_approval_channel`` keyword is accepted for source compatibility but
+    ignored: this helper cannot consume a human approval for the pending call.
     """
     if sentinel == EXECUTE:
         return False
-    if sentinel == APPROVE:
-        return not has_approval_channel
     return True  # BLOCK, or anything unrecognized → stop
 
 
@@ -136,26 +135,40 @@ def to_verdict(
     """
     policy = policy or Policy()
     trace = dict(trace or {})
-    if session_id is not None:
-        trace.setdefault("session_id", session_id)
 
     def _fail_closed(reason: str, *, error: Optional[str] = None,
                      error_type: Optional[str] = None) -> Verdict:
         return Verdict(band="RED", sentinel=BLOCK, blocked=True, reason=reason,
                        error=error, error_type=error_type, trace=trace)
 
-    if not tool_name:
-        return _fail_closed("tool_name is required",
-                            error="tool_name is required", error_type="InvalidRequest")
+    if type(tool_name) is not str or not tool_name.strip():
+        return _fail_closed(
+            "tool_name must be a non-empty string",
+            error="tool_name must be a non-empty string",
+            error_type="InvalidRequest",
+        )
     if tool_input is None:
         tool_input = {}
     if not isinstance(tool_input, dict):
         return _fail_closed("params/tool_input must be a JSON object",
                             error="params/tool_input must be a JSON object",
                             error_type="InvalidRequest")
-    if autonomy is not None and not isinstance(autonomy, int):
-        return _fail_closed("autonomy must be an integer",
-                            error="autonomy must be an integer", error_type="InvalidRequest")
+    if autonomy is not None and (
+        type(autonomy) is not int or not 0 <= autonomy <= 4
+    ):
+        return _fail_closed(
+            "autonomy must be an integer in [0, 4]",
+            error="autonomy must be an integer in [0, 4]",
+            error_type="InvalidRequest",
+        )
+    if session_id is not None and type(session_id) is not str:
+        return _fail_closed(
+            "session_id must be a string or null",
+            error="session_id must be a string or null",
+            error_type="InvalidRequest",
+        )
+    if session_id is not None:
+        trace.setdefault("session_id", session_id)
 
     # Pre-score input layers: injection scan, then policy-driven semantic review.
     input_text = str(tool_input)

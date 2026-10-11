@@ -2,22 +2,22 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Edit|Write|WebFetch|Read",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "python -m fivedrisk --format json score -"
+            "command": "if [ -z \"${FIVEDRISK_PYTHON:-}\" ] || [ -z \"${CLAUDE_PLUGIN_ROOT:-}\" ]; then echo \"fivedrisk: required hook environment is unset; blocking\" >&2; exit 2; fi; \"$FIVEDRISK_PYTHON\" -I \"$CLAUDE_PLUGIN_ROOT/scripts/run_hook.py\" pre || exit 2"
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash|WebFetch",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "python -m fivedrisk --format json scan-output -"
+            "command": "if [ -z \"${FIVEDRISK_PYTHON:-}\" ] || [ -z \"${CLAUDE_PLUGIN_ROOT:-}\" ]; then echo \"fivedrisk: required hook environment is unset; blocking\" >&2; exit 2; fi; \"$FIVEDRISK_PYTHON\" -I \"$CLAUDE_PLUGIN_ROOT/scripts/run_hook.py\" post || exit 2"
           }
         ]
       }

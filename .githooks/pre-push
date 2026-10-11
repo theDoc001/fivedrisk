@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel) || exit 2
+gate="$repo_root/tools/release_window.py"
+
+if [ ! -f "$gate" ]; then
+  echo "DENY: release-window gate is missing: $gate" >&2
+  exit 2
+fi
+
+exec python3 -I "$gate" --action push

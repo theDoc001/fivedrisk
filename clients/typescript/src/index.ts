@@ -6,6 +6,9 @@ export {
   type FivedriskVerdict,
   type ScoreRequest,
   type GatewayOptions,
+  type JsonValue,
+  type PreparedScore,
+  canonicalizeJsonValue,
 } from "./gateway.js";
 export { guardVercelTool, FivedriskBlockedError, type VercelToolLike, type GuardOptions } from "./vercel.js";
 export { guardGenkitTool, type GenkitToolHandler } from "./genkit.js";

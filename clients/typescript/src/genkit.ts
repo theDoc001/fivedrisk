@@ -4,7 +4,8 @@
  * A Genkit tool is `ai.defineTool({ name, ... }, async (input) => result)`.
  * `guardGenkitTool` wraps that async handler: it scores the input through the
  * gateway first and, on a block, throws `FivedriskBlockedError` so the tool does
- * not run. GREEN/YELLOW call the real handler. Structural typing keeps this
+ * not run. GREEN/YELLOW call the real handler. ORANGE remains blocked because
+ * this wrapper has no per-call approval result. Structural typing keeps this
  * typecheckable without Genkit installed.
  */
 
@@ -24,16 +25,20 @@ export function guardGenkitTool<I, O>(
   opts: GuardOptions = {},
 ): GenkitToolHandler<I, O> {
   return async (input: I): Promise<O> => {
-    const verdict = await gateway.score({
+    const prepared = await gateway.prepareScore({
       toolName,
       toolInput: input,
       autonomy: opts.autonomy,
       sessionId: opts.sessionId,
       source: "genkit",
     });
+    const verdict = prepared.verdict;
     if (verdict.blocked) {
       throw new FivedriskBlockedError(toolName, verdict.band, verdict.reason);
     }
-    return handler(input);
+    if (!prepared.ok) {
+      throw new FivedriskBlockedError(toolName, verdict.band, verdict.reason);
+    }
+    return handler(prepared.canonicalInput as I);
   };
 }

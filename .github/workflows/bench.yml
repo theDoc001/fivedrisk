@@ -114,20 +114,9 @@ jobs:
           PY
           cp "$BASE_TREE/benchmarks/bench_ci.py" "$EVIDENCE/driver/bench_ci.py"
           cp "$BASE_TREE/benchmarks/check_regression.py" "$EVIDENCE/driver/check_regression.py"
-          if [ -f "$BASE_TREE/benchmarks/aggregate_paired_results.py" ]; then
-            cp "$BASE_TREE/benchmarks/aggregate_paired_results.py" "$EVIDENCE/driver/aggregate_paired_results.py"
-            echo "aggregator=protected-base" | tee "$EVIDENCE/aggregator-source.txt"
-          else
-            test "$BASE_SHA" = "c22213b513d4be167a0704244ad08c54e4ed1984"
-            while IFS= read -r changed; do
-              case "$changed" in
-                .github/workflows/bench.yml|.github/workflows/release-gate.yml|.github/workflows/tests.yml|README.md|benchmarks/README.md|benchmarks/bench_ci.py|benchmarks/check_regression.py|benchmarks/aggregate_paired_results.py|fivedrisk/tests/test_paired_benchmark_gate.py|fivedrisk/tests/test_release_window.py|tools/release_window.py) ;;
-                *) echo "FAIL: non-infrastructure bootstrap path: $changed" >&2; exit 1 ;;
-              esac
-            done < "$EVIDENCE/changed-paths.txt"
-            cp "$CANDIDATE_TREE/benchmarks/aggregate_paired_results.py" "$EVIDENCE/driver/aggregate_paired_results.py"
-            echo "aggregator=bootstrap-candidate-infrastructure-only" | tee "$EVIDENCE/aggregator-source.txt"
-          fi
+          test -f "$BASE_TREE/benchmarks/aggregate_paired_results.py"
+          cp "$BASE_TREE/benchmarks/aggregate_paired_results.py" "$EVIDENCE/driver/aggregate_paired_results.py"
+          echo "aggregator=protected-base" | tee "$EVIDENCE/aggregator-source.txt"
           shasum -a 256 \
             "$BASE_TREE/benchmarks/bench_ci.py" \
             "$CANDIDATE_TREE/benchmarks/bench_ci.py" \

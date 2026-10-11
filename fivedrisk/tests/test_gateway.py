@@ -123,6 +123,39 @@ def test_score_action_dict_non_dict_params(policy, log):
     assert decision["error_type"] == "InvalidRequest"
 
 
+@pytest.mark.parametrize("bad_name", [True, False, 0, 1, [], {}, "", "  "])
+def test_score_action_dict_rejects_non_exact_or_empty_tool_name(policy, log, bad_name):
+    decision = gateway.score_action_dict(
+        {"tool_name": bad_name, "name": "Bash", "params": {"command": "rm -rf /"}},
+        policy,
+        log=log,
+    )
+    assert decision["error_type"] == "InvalidRequest"
+    assert "non-empty string" in decision["error"]
+
+
+@pytest.mark.parametrize("bad_autonomy", [True, False, -1, 5, 1.5, "4", [], {}])
+def test_score_action_dict_rejects_invalid_autonomy(policy, log, bad_autonomy):
+    decision = gateway.score_action_dict(
+        {"tool_name": "Read", "params": {}, "autonomy": bad_autonomy},
+        policy,
+        log=log,
+    )
+    assert decision["error_type"] == "InvalidRequest"
+    assert "integer in [0, 4]" in decision["error"]
+
+
+@pytest.mark.parametrize("bad_session", [True, False, 0, 1, 1.5, [], {}])
+def test_score_action_dict_rejects_invalid_session_id(policy, log, bad_session):
+    decision = gateway.score_action_dict(
+        {"tool_name": "Read", "params": {}, "session_id": bad_session},
+        policy,
+        log=log,
+    )
+    assert decision["error_type"] == "InvalidRequest"
+    assert "string or null" in decision["error"]
+
+
 # ─── serve_stdio ──────────────────────────────────────────────────
 
 
@@ -158,6 +191,7 @@ def test_serve_stdio_handshake_and_id_echo(monkeypatch, tmp_path):
         "ready": True,
         "protocol_version": gateway.PROTOCOL_VERSION,
         "engine": "fivedrisk",
+        "engine_version": gateway.__version__,
     }
     assert out[1]["id"] == "req-1"
     assert out[1]["band"] == "RED"
@@ -197,6 +231,55 @@ def test_invalid_json_input(monkeypatch, tmp_path):
 
     assert len(decisions) == 2
     assert decisions[0]["error_type"] == "JSONDecodeError"
+    assert decisions[1]["band"] == "GREEN"
+
+
+def test_invalid_session_frame_is_correlated_and_next_frame_survives(monkeypatch, tmp_path):
+    inputs = [
+        json.dumps({
+            "id": "bad-session",
+            "tool_name": "Read",
+            "params": {},
+            "session_id": [],
+        }) + "\n",
+        json.dumps({
+            "id": "valid-next",
+            "tool_name": "Read",
+            "params": {"file_path": "/tmp/a"},
+        }) + "\n",
+    ]
+    decisions = _run_stdio(monkeypatch, inputs, tmp_path)
+    assert decisions[0]["id"] == "bad-session"
+    assert decisions[0]["error_type"] == "InvalidRequest"
+    assert decisions[1]["id"] == "valid-next"
+    assert decisions[1]["band"] == "GREEN"
+
+
+def test_unexpected_frame_processing_error_is_correlated_and_loop_continues(
+    monkeypatch, tmp_path
+):
+    original = gateway.score_action_dict
+    calls = 0
+
+    def fail_once(request, policy, log=None):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("unexpected processor failure")
+        return original(request, policy, log=log)
+
+    monkeypatch.setattr(gateway, "score_action_dict", fail_once)
+    inputs = [
+        json.dumps({"id": "broken", "tool_name": "Read", "params": {}}) + "\n",
+        json.dumps({"id": "next", "tool_name": "Read", "params": {}}) + "\n",
+    ]
+    decisions = _run_stdio(monkeypatch, inputs, tmp_path)
+    assert decisions[0] == {
+        "error": "request processing failed: unexpected processor failure",
+        "error_type": "RuntimeError",
+        "id": "broken",
+    }
+    assert decisions[1]["id"] == "next"
     assert decisions[1]["band"] == "GREEN"
 
 

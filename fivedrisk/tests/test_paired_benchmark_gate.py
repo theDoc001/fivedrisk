@@ -264,7 +264,8 @@ def test_benchmark_workflow_uses_protected_tools_and_balanced_crossover_blocks()
     assert "github.event.pull_request.head.sha" in workflow
     assert 'cp "$BASE_TREE/benchmarks/bench_ci.py"' in workflow
     assert 'cp "$BASE_TREE/benchmarks/check_regression.py"' in workflow
-    assert "aggregate_paired_results.py" in workflow
+    assert 'cp "$BASE_TREE/benchmarks/aggregate_paired_results.py"' in workflow
+    assert "aggregator=protected-base" in workflow
     assert "seq -w 1 12" in workflow
     assert 'design="abba"' in workflow
     assert 'subjects="base candidate candidate base"' in workflow
@@ -274,14 +275,9 @@ def test_benchmark_workflow_uses_protected_tools_and_balanced_crossover_blocks()
     assert "positive-control-current.json" in workflow
     assert "persist-credentials: false" in workflow
     assert 'python-version: "3.14.6"' in workflow
-    assert "bootstrap-candidate-infrastructure-only" in workflow
-    for bootstrap_path in (
-        ".github/workflows/release-gate.yml",
-        ".github/workflows/tests.yml",
-        "tools/release_window.py",
-        "fivedrisk/tests/test_release_window.py",
-    ):
-        assert bootstrap_path in workflow
+    assert "bootstrap-candidate-infrastructure-only" not in workflow
+    assert "c22213b513d4be167a0704244ad08c54e4ed1984" not in workflow
+    assert 'cp "$CANDIDATE_TREE/benchmarks/aggregate_paired_results.py"' not in workflow
 
 
 def test_benchmark_driver_documents_the_enforced_dual_threshold():

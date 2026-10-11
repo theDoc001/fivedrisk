@@ -52,9 +52,9 @@ class TestQA1NeverDemote:
     def test_sentinel_blocks_semantics(self):
         assert sentinel_blocks(EXECUTE) is False
         assert sentinel_blocks(BLOCK) is True
-        # APPROVE stops WITHOUT an approval channel (fail-closed); proceeds only with one.
+        # A static channel declaration cannot prove approval for this call.
         assert sentinel_blocks(APPROVE) is True
-        assert sentinel_blocks(APPROVE, has_approval_channel=True) is False
+        assert sentinel_blocks(APPROVE, has_approval_channel=True) is True
         # anything unrecognized stops.
         assert sentinel_blocks("weird") is True
 
@@ -87,7 +87,7 @@ class TestToVerdict:
         v = to_verdict(None, {"x": 1})
         assert v.sentinel == BLOCK
         assert v.blocked is True
-        assert v.error == "tool_name is required"
+        assert v.error == "tool_name must be a non-empty string"
 
     def test_bad_tool_input_fails_closed(self):
         v = to_verdict("Bash", "not-a-dict")  # type: ignore[arg-type]

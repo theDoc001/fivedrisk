@@ -1,10 +1,12 @@
 # fivedrisk adapter wiring reference
 
 Copy-paste wiring for each supported framework. Every adapter routes through the same
-5D verdict socket and is **fail-closed**: RED blocks, ORANGE needs an approval channel
-(else blocks), invalid input / engine error blocks. Pass a `policy=` and, optionally,
-`session_id=` (for Markov drift) and `has_approval_channel=True` (only if you actually
-route approvals) to any `make_*` factory.
+5D verdict socket and is **fail-closed**: RED blocks, ORANGE holds, invalid input /
+engine error blocks. Pass a `policy=` and, optionally, `session_id=` (for Markov
+drift) to any `make_*` factory. The deprecated `has_approval_channel` keyword is
+accepted but ignored: these adapters do not consume approval for individual calls.
+The host must own human review and authorized continuation. Claude's native hook
+separately returns `ask`; a static flag never authorizes a framework tool call.
 
 ## CrewAI
 
@@ -69,42 +71,48 @@ graph.add_conditional_edges("fivedrisk_gate", route_by_band,
      "orange": "hitl_review", "red": "deny_response"})
 ```
 
-## Claude Code (CLI hooks)
+## Manual host integrations
 
-Wire in `.claude/settings.json` — PreToolUse gates, PostToolUse verifies output:
-
-```json
-{
-  "hooks": {
-    "PreToolUse":  [{ "matcher": "*", "hooks": [{ "type": "command", "command": "python -m fivedrisk claude-hook" }] }],
-    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "python -m fivedrisk claude-hook" }] }]
-  }
-}
-```
-
-ORANGE maps to Claude Code's native `ask` (human approval); RED → `deny`.
+The public ChatGPT/Codex artifact is advisory and contains no lifecycle configuration.
+Manual Codex desktop and Claude Code installations can use host-specific hooks when
+available, but those protocols differ. This release's reviewed hooks are Claude-specific;
+they are not a Codex adapter. Claude setup and explicit settings belong in the separate
+manual ZIP's `manual/README.md` or the
+[manual integration guide](https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin/manual).
+Do not claim the public skill gates host tools or submit a hook-containing ZIP to the
+public plugin directory.
 
 ## Vercel AI SDK / Genkit (Node)
 
 ```bash
-npm install fivedrisk-gateway   # Python side: pip install fivedrisk
+npm install fivedrisk-gateway
+"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+PYTHON_BIN="$PYTHON_BIN" bash "$SKILL_ROOT/scripts/verify-install.sh"
 ```
 
 ```ts
 import { FivedriskGateway, guardVercelTool, guardGenkitTool } from "fivedrisk-gateway";
-const gw = new FivedriskGateway();                       // spawns `python -m fivedrisk gateway stdio`
+const gw = new FivedriskGateway({ command: "<SELECTED_PYTHON>" });
 const gatedTool = guardVercelTool(gw, "write_to_database", tool);           // Vercel AI SDK
 // Genkit:  ai.defineTool({name}, guardGenkitTool(gw, "write_to_database", handler));
 ```
 
 ## Anything else — the `@gate` decorator
 
+`@gate` accepts detached exact built-in action data only: `None`, booleans,
+integers, finite floats, strings, lists, tuples, and string-keyed dictionaries.
+Convert paths, dataclasses, framework objects, and other custom values before the
+call; unsupported values block before the wrapped function runs. Instance and
+class methods are not supported because their receiver is a custom object; gate a
+static or free data-only boundary function instead. A Bash gate accepts only one
+exact built-in string in its `command` parameter, never an argv list or tuple.
+
 ```python
 from fivedrisk.hooks import gate
 
 @gate(tool_name="write_to_database", autonomy_context=2)
 async def write_record(table: str, data: dict) -> None:
-    ...   # runs only on GREEN/YELLOW; ORANGE → approval; RED → blocked
+    ...   # runs only on GREEN/YELLOW; ORANGE → held for human review; RED → blocked
 ```
 
 ## §policy
@@ -113,7 +121,7 @@ Point any adapter at a policy (`make_*(policy=...)`, `@gate` reads `configure(po
 or set `FIVEDRISK_POLICY_PATH`). Start from a shipped preset, validate, then hand-tune:
 
 ```bash
-python3 -m fivedrisk validate your-policy.yaml
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap validate your-policy.yaml
 ```
 
 Key knobs: `tool_defaults` (per-tool dimension scores), `bash_overrides` (regex floors for

@@ -57,7 +57,6 @@ the finding.
 import math
 import random
 import re
-import time
 from contextlib import contextmanager
 
 import pytest
@@ -626,21 +625,32 @@ def test_candidate_cap_must_not_silently_drop_a_real_pan_ACCIDENTAL():
         "(measured threshold: 86 refs, 2171 chars)")
 
 
-def test_candidate_generation_is_bounded_in_TIME_on_hostile_input():
-    """Bounded work must survive the payload sizes a gate actually sees. The bound must come
-    from the algorithm, not only from the truncating cap — because the cap is what causes the
-    fail-open above, so a correct fix will have to weaken or remove it."""
-    for payload in (" ".join("1" for _ in range(50000)),
-                    " ".join("1234" for _ in range(20000)),
-                    "x".join(["1234 5678 9012 3456"] * 20000),
-                    "9" * 100000,
-                    ("4539 5787 6362 1486 " * 5000)):
-        t0 = time.perf_counter()
-        P._digit_run_candidates(payload)
-        elapsed = time.perf_counter() - t0
-        assert elapsed < 0.25, (
-            f"candidate generation took {elapsed:.3f}s on a {len(payload)}-char payload — "
-            "a checksum axis that is a DoS surface is a third bug")
+def test_oversize_checksum_input_fails_closed_without_invoking_generator():
+    """The runtime bound, rather than host speed, is the DoS security contract."""
+    called = False
+
+    def must_not_run(_text):
+        nonlocal called
+        called = True
+        raise AssertionError("oversize input reached checksum candidate generation")
+
+    with candidate_generator(must_not_run):
+        assert fires("x" * (P._MAX_HAYSTACK_CHARS + 1)) is True
+    assert called is False
+
+
+def test_checksum_input_at_the_boundary_is_fully_scanned():
+    """The fail-closed guard must not truncate or reject an in-bound field."""
+    seen = []
+
+    def record(text):
+        seen.append(text)
+        return []
+
+    payload = "x" * P._MAX_HAYSTACK_CHARS
+    with candidate_generator(record):
+        assert fires(payload) is False
+    assert seen == [payload]
 
 
 def test_the_bound_is_declared_and_its_overflow_behaviour_is_asserted():
@@ -849,10 +859,12 @@ def _arm_cap():
     assert fires(" ".join(["1234"] * 200) + " " + _PAN) is True, "cap fail-open"
 
 
-def _arm_time():
-    t0 = time.perf_counter()
-    P._digit_run_candidates("x".join(["1234 5678 9012 3456"] * 20000))
-    assert time.perf_counter() - t0 < 0.25, "unbounded work"
+def _arm_work_bound():
+    group_count = 400
+    payload = " ".join(["1234"] * group_count)
+    generator = P._CHECKSUM_VALIDATORS["luhn"][0]
+    candidates = generator(payload)
+    assert len(candidates) <= 8 * group_count, "candidate growth is not linear"
 
 
 ARMS = {
@@ -860,7 +872,7 @@ ARMS = {
     "false_block": _arm_false_block,
     "MR1_grouping": _arm_mr1,
     "cap_fail_open": _arm_cap,
-    "bounded_work": _arm_time,
+    "bounded_work": _arm_work_bound,
 }
 
 # mutant -> the arms that MUST kill it. A mutant no arm kills is a hole in this corpus.

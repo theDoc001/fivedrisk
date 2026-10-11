@@ -35,6 +35,10 @@ agent action
     └── RED    ─────────────► block, audit, alert
 ```
 
+The arrows show the shipped default dispositions, not the definition of each band.
+A band is severity; a deployment may remap its disposition. Concrete adapters below
+state where their integration contract deliberately blocks or requests approval.
+
 **What it is.** A runtime action-governance layer for AI agents. Per-action 5D scoring, HITL escalation, append-only audit log, 16-state Markov SafetyDrift for compositional attacks, identity capture, and an NDJSON event stream for SIEM. Think OPA for AI agents.
 
 **What it is not.** A general LLM guardrail suite, a semantic content scanner, or a replacement for one. It is the deterministic pre-filter that lets a semantic scanner and your own governance practices (tool and scope narrowing, prompt guardrails, system prompts) scale.
@@ -46,8 +50,9 @@ fivedrisk assesses whether an action is **safe to run** (dangerous, out-of-polic
 ## Quickstart in 5 minutes
 
 ```bash
-pip install fivedrisk
-python -c "import fivedrisk; print(fivedrisk.__version__)"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 ```
 
 Wrap any function. The gate scores the call, and the action only runs if the band clears.
@@ -58,9 +63,17 @@ from fivedrisk.hooks import gate
 @gate(tool_name="write_to_database", autonomy_context=2)
 async def write_record(table: str, data: dict) -> None:
     ...  # only executes if 5D scores GREEN or YELLOW
-         # ORANGE → human approval required
-         # RED    → blocked, never runs
+         # Shipped @gate default: ORANGE → approval; RED → block
 ```
+
+`@gate` snapshots and executes the same detached action data it scores. Action
+arguments must use exact built-in `None`, `bool`, `int`, finite `float`, `str`,
+`list`, `tuple`, or string-keyed `dict` values; subclasses and custom objects
+raise `GateInputError` (or route through `on_block`) before the function runs.
+Convert paths, dataclasses, handles, and other objects explicitly at the call boundary.
+Instance and class methods are unsupported because their receivers are custom objects;
+gate a static or free data-only boundary function instead. A `Bash` gate accepts one
+exact built-in string in its `command` parameter, never an argv list or tuple.
 
 Full walkthrough including scope-narrowing guidance and per-deployment tuning: [`docs/quickstart.md`](docs/quickstart.md). Copy-paste-runnable integrations: [`examples/`](examples/). Policy presets for common deployment archetypes: [`fivedrisk/policies/presets/`](fivedrisk/policies/presets/).
 
@@ -90,16 +103,16 @@ fivedrisk is an ingredient you drop into your agent stack, not a platform you mi
 
 | Surface | How you wire it | Entry point |
 |---|---|---|
-| **Claude Code** | PreToolUse gate (ORANGE → native `ask`) + PostToolUse verify | `python -m fivedrisk claude-hook` |
-| **Any non-Python host** (Node, Go, Rust, TypeScript) | Long-lived JSON-lines subprocess, full governance parity | `python -m fivedrisk gateway stdio` |
+| **Claude Code** | PreToolUse gate (ORANGE → native `ask`) + PostToolUse verify | `"$PYTHON_BIN" -I -m fivedrisk._bootstrap claude-hook` |
+| **Any non-Python host** (Node, Go, Rust, TypeScript) | Long-lived JSON-lines subprocess, full governance parity | `"$PYTHON_BIN" -I -m fivedrisk._bootstrap gateway stdio` |
 | **OpenClaw** | TypeScript plugin over the gateway | [`5d-claw-security`](https://github.com/theDoc001/5d-claw-security) |
-| **Setup / field engineering** | Detect your framework, generate a policy, verify install | [`fivedrisk-setup` skill](fivedrisk-plugin/skills/fivedrisk-setup/) |
+| **Setup / field engineering** | Detect your framework; select, copy, and validate an operator-owned policy; verify install | [`fivedrisk-setup` skill](fivedrisk-plugin/skills/fivedrisk-setup/) |
 
 **The gateway** lets any language call the engine over JSON-lines:
 
 ```bash
-python -m fivedrisk.gateway stdio --policy policy.yaml   # long-lived, one JSON request/decision per line
-python -m fivedrisk.gateway score --policy policy.yaml   # one-shot
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap gateway stdio --policy policy.yaml   # long-lived, one JSON request/decision per line
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap gateway score --policy policy.yaml   # one-shot
 ```
 
 It has governance parity with the Python hooks: it classifies, scores, bands, and logs, and it reuses the input layers (prompt-injection scanning and policy-driven semantic review run before scoring, Markov session-drift accumulates across calls on a `stdio` connection). The one layer that stays Python-side is the destination allow/deny policy, which is driven by `configure()` arguments rather than the policy file the gateway loads.
@@ -154,31 +167,30 @@ Full vocabulary and the disposition ladder (`EXECUTE` / `LOG_ELEVATED` / `ROUTE_
 - **Security policy** — supported versions, how to report a vulnerability, and the advisory for 0.6.0 and earlier: [`SECURITY.md`](SECURITY.md).
 - **Policy floor enforcement** — floor rules in `policy.yaml` cannot be overridden at runtime.
 - **Defence-in-depth test suite** — see [Benchmark and test suite](#benchmark-and-test-suite) for the full attack-class coverage.
-- **897 tests** (1593 cases once parametrised). The card-number acceptance corpus
-  previously carried one deliberate red test, where two arms required opposite verdicts on inputs
-  identical in every observable a digits-only rule has. That turned out to be a corpus
-  specification error rather than an implementation gap: the relation it asserted (grouping is
-  presentation and must not change the verdict) holds by construction for the exact-match card
-  class and is false by design for the embedded class, which reads grouping deliberately. It is
-  now scoped to the class where it holds, and the embedded class's grouping-dependence is
-  asserted directly instead.
+- **Regression suite.** Acceptance, adversarial, integration, packaging, and
+  documentation contracts are exercised in CI without a hand-maintained count.
 
 ---
 
 ## Install
 
 ```bash
-pip install fivedrisk
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 
 # With LangGraph integration
-pip install "fivedrisk[langgraph]"
+"$PYTHON_BIN" -m pip install "fivedrisk[langgraph]>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 ```
 
-Or from source (latest main):
+Or from an exact VCS ref, only after the user approves both the repository URL and
+that ref. Prefer an immutable full commit; never silently substitute VCS after an
+index failure. Replace `<FULL_COMMIT>` with the approved commit:
 
 ```bash
-pip install git+https://github.com/theDoc001/fivedrisk.git
-pip install "git+https://github.com/theDoc001/fivedrisk.git#egg=fivedrisk[langgraph]"
+"$PYTHON_BIN" -m pip install "git+https://github.com/theDoc001/fivedrisk.git@<FULL_COMMIT>"
+"$PYTHON_BIN" -m pip install "git+https://github.com/theDoc001/fivedrisk.git@<FULL_COMMIT>#egg=fivedrisk[langgraph]"
 ```
 
 ---
@@ -192,9 +204,9 @@ policy = load_policy("policy.yaml")  # or use defaults
 action = classify_tool_call("Bash", {"command": "rm -rf /tmp/cache"}, policy)
 result = score(action, policy)
 
-print(result.band)                      # Band.ORANGE
-print(result.rationale)                 # "ORANGE — Bash: Reversibility=3 (≥ ORANGE threshold 3)"
-print(result.routing.approval_required) # True. Your HITL stack handles the rest.
+print(result.band)                      # Band.RED
+print(result.rationale)                 # "RED — Bash: Tool Privilege=4 ...; Reversibility=4 ..."
+print(result.routing.approval_required) # True (routing metadata); RED is still denied by the gate.
 ```
 
 **With the `@gate` decorator:**
@@ -329,7 +341,7 @@ approve_invoice(
 **Admission check.** Declare `identity_required: true` in `policy.yaml` to deny actions where the caller supplied no identity (or ANONYMOUS). The deny surfaces as `IdentityRequiredError` and emits an `identity_required_denial` NDJSON event.
 
 ```yaml
-# policy.yaml
+# @gate-only fragment; other adapters need upstream identity admission
 identity_required: true
 ```
 
@@ -458,14 +470,21 @@ floor:
     band: RED
     reason: "floor:sar-filing-needs-approval"
 
-# command_contains is BEST-EFFORT only: a case-sensitive substring match that
-# an attacker can bypass with casing, whitespace, comment splicing, or
-# encoding. Use it as an advisory heuristic, NOT a hard control. `fivedrisk
-# validate` warns when a RED/ORANGE floor is gated on command_contains.
+```
+
+`command_contains` is BEST-EFFORT only: a case-sensitive substring match that
+an attacker can bypass with casing, whitespace, comment splicing, or encoding.
+Use it as an advisory heuristic, not a hard control. The following deliberately
+warning-producing fragment is illustrative and should not be copied as a hard
+policy:
+
+```yaml
+# advisory warning example — not a canonical policy.yaml
+floor:
   - tool_name: "Bash"
-    command_contains: "DROP TABLE"   # heuristic hint, evadable, not a guarantee
+    command_contains: "DROP TABLE"
     band: RED
-    reason: "floor:no-destructive-sql"
+    reason: "floor:advisory-destructive-sql"
 ```
 
 When several floor rules fire on one action, the strictest one wins. List position does not decide a
@@ -498,7 +517,7 @@ fivedrisk ships with two reproducible measurement surfaces. Both are determinist
 
 **Performance benchmark** (`python benchmarks/bench_minimal.py`): measures per-action latency across the core scoring path, scanners, drift accumulator, and audit-log I/O. Reports p50/p95/p99 over 2K to 10K samples per scenario. Produces the numbers in [Performance](#performance) below.
 
-**Attack-class benchmark** (`python -m fivedrisk benchmark`): runs 39 offline expectation checks across four suites from the unified harness registry:
+**Attack-class benchmark** (`"$PYTHON_BIN" -I -m fivedrisk._bootstrap benchmark`): runs 39 offline expectation checks across four suites from the unified harness registry:
 
 - **Prompt injection (14 scenarios)** — override prompts, role hijacks, system-tag injection, jailbreak markers, encoded payloads, zero-width Unicode, multi-step exfiltration.
 - **Egress / output leakage (12 scenarios)** — credential, PII (SSN, credit card), crypto key, injection-echo, and exfiltration-command detection, plus post-tool allow/block checks.
@@ -510,8 +529,8 @@ The benchmark includes positive controls that should be detected, escalated, blo
 JSON output is available in either global or subcommand form:
 
 ```bash
-python -m fivedrisk --format json benchmark
-python -m fivedrisk benchmark --format json --include-results
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap --format json benchmark
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap --format json benchmark --include-results
 ```
 
 The `--include-results` form emits one auditable result row per scenario, including its mission, expected enforcement layer, expected outcome, observed outcome, and verdict.
@@ -519,8 +538,8 @@ The `--include-results` form emits one auditable result row per scenario, includ
 **AIID-style pattern smoke** (`python benchmarks/bench_aiid_patterns.py`): runs safe local checks translated from common incident-pattern classes. It compares default 5D against a targeted deployment profile and can optionally call a local Ollama observer:
 
 ```bash
-python benchmarks/bench_aiid_patterns.py
-python benchmarks/bench_aiid_patterns.py --observer ollama:gemma3:1b
+"$PYTHON_BIN" benchmarks/bench_aiid_patterns.py
+"$PYTHON_BIN" benchmarks/bench_aiid_patterns.py --observer ollama:gemma3:1b
 ```
 
 This script is for calibration, not CI proof. It exposes which incident patterns default 5D covers, which patterns need a deployment profile, and where an observer adds value or false positives.
@@ -575,7 +594,7 @@ The following symbols are stable for the 0.x series. Breaking changes to these r
 
 The framework adapters, the Claude Code hook, and the TypeScript gateway client added in 0.6.0 are stabilising; their entry-point names are expected to hold, but treat them as 0.x-provisional until 1.0.
 
-Everything else (internal modules, undocumented helpers, future modules added in patch versions) may change between minor versions. Pin to a specific patch version (e.g. `fivedrisk==0.6.0`) if you embed fivedrisk into a downstream project.
+Everything else (internal modules, undocumented helpers, future modules added in patch versions) may change between minor versions. Pin to a supported patch version (for example `fivedrisk==0.7.1`) if you embed fivedrisk into a downstream project.
 
 ---
 
@@ -599,7 +618,7 @@ fivedrisk/
 ├── langgraph_node.py# LangGraph integration
 ├── gateway.py       # JSON-lines gateway for non-Python hosts
 ├── benchmarks.py    # 39-case offline benchmark harness
-└── tests/           # 897 tests
+└── tests/           # regression and acceptance suite
 
 clients/typescript/  # fivedrisk-gateway npm package (Vercel AI SDK + Genkit)
 ```

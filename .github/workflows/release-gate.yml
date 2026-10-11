@@ -1,9 +1,12 @@
 name: Release window audit
 
 on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
-    branches: [main]
   merge_group:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,6 +19,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Audit external mutation time
+        run: python -I tools/release_window.py --action push
 
-      - name: Audit merge time
-        run: python -I tools/release_window.py --action merge
+  hook-contract:
+    name: hook-contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify tracked hook and gate
+        run: |
+          test -x .githooks/pre-push
+          test -f tools/release_window.py
+          grep -F 'python3 -I "$gate" --action push' .githooks/pre-push

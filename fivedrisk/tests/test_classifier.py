@@ -91,9 +91,9 @@ class TestAutonomyContext:
         action = classify_tool_call("Bash", {"command": "ls"}, autonomy_context=3)
         assert action.autonomy_context == 3
 
-    def test_autonomy_clamped_to_max(self):
-        action = classify_tool_call("Bash", {"command": "ls"}, autonomy_context=10)
-        assert action.autonomy_context == 4
+    def test_invalid_explicit_autonomy_is_not_clamped(self):
+        with pytest.raises(ValueError, match="integer in \\[0, 4\\]"):
+            classify_tool_call("Bash", {"command": "ls"}, autonomy_context=10)
 
 
 class TestSource:

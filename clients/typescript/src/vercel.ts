@@ -3,9 +3,11 @@
  *
  * The AI SDK runs a tool via its `execute(args, options)` method. `guardVercelTool`
  * wraps that method: it scores the pending call through the gateway first and, on a
- * block (RED, or ORANGE without an approval channel), throws `FivedriskBlockedError`
+ * block (RED or ORANGE), throws `FivedriskBlockedError`
  * so the tool visibly does NOT run — never a fake success. GREEN/YELLOW pass through
- * to the real `execute`. Structural typing (no `import from "ai"`) keeps this
+ * to the real `execute`. A configured approval channel is not proof that this
+ * particular call was approved, so ORANGE never executes through this wrapper.
+ * Structural typing (no `import from "ai"`) keeps this
  * typecheckable without the SDK installed; it matches the AI SDK tool shape.
  */
 
@@ -48,17 +50,21 @@ export function guardVercelTool<T extends VercelToolLike>(
   const guarded: VercelToolLike = {
     ...tool,
     execute: async (args: unknown, options: unknown): Promise<unknown> => {
-      const verdict = await gateway.score({
+      const prepared = await gateway.prepareScore({
         toolName,
         toolInput: args,
         autonomy: opts.autonomy,
         sessionId: opts.sessionId,
         source: "vercel-ai-sdk",
       });
+      const verdict = prepared.verdict;
       if (verdict.blocked) {
         throw new FivedriskBlockedError(toolName, verdict.band, verdict.reason);
       }
-      return original(args, options);
+      if (!prepared.ok) {
+        throw new FivedriskBlockedError(toolName, verdict.band, verdict.reason);
+      }
+      return original(prepared.canonicalInput, options);
     },
   };
   return guarded as T;

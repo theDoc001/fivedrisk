@@ -7,10 +7,10 @@ and risk-based model routing floors.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
 
 import yaml
 
@@ -20,14 +20,11 @@ from .schema import Band, DIMENSION_NAMES
 # Low→high band ordering, used to compare floor bands against computed bands.
 _FLOOR_BAND_ORDER = (Band.GREEN, Band.YELLOW, Band.ORANGE, Band.RED)
 
-# ReDoS hygiene (OSS-REDOS-HYGIENE-001): a per-scan input-length cap that bounds the worst-case
-# backtracking window BEFORE a regex axis scans. This is the tunable knob (module default; a
-# deployment may lower it). A truncated haystack still scans the LITERAL (``command_contains``) and
-# membership (``fields``/``list_ref``) axes fully — only the regex axes (``patterns``/``command_regex``)
-# read the capped text. The default is generous enough that no shipped preset / test input is
-# affected (never-perturb-existing holds): it exists to defang a crafted megabyte-scale backtracking
-# payload, not to change any real floor outcome. NOTE the engine is NOT swapped (RE2/rust deferred
-# per the tech-scout); this is the €0 hygiene that makes an eventual linear-time swap a half-day.
+# A per-scan input-length cap limits memory and ordinary linear work. It is NOT a regex execution-
+# time bound: catastrophic backtracking can occur on a few dozen characters. Hard RED/ORANGE floors
+# therefore also reject known unsafe regex constructs at authoring time and fail closed before search
+# when callers bypass the compiler with direct dataclass construction. The cap remains defense in
+# depth for oversize inputs and for softer authoring surfaces.
 _MAX_HAYSTACK_CHARS = 100_000
 
 
@@ -40,9 +37,8 @@ def _compiled(pattern: str) -> "re.Pattern[str] | None":
         return None
 
 
-# ReDoS pattern-linter (OSS-REDOS-HYGIENE-001). Authoring-time WARNING only — it never rejects a
-# pattern (a reviewed pattern may legitimately trip a heuristic). It flags the classic catastrophic
-# shapes an eventual RE2/Rust swap would have to rewrite. Called from ``fivedrisk validate``.
+# ReDoS pattern screen (OSS-REDOS-HYGIENE-001). It flags classic catastrophic shapes. Softer
+# GREEN/YELLOW surfaces report warnings; RED/ORANGE floors reject them during load/validation.
 _REDOS_LINTS: "tuple[tuple[re.Pattern[str], str], ...]" = (
     (re.compile(r"\([^)]*[+*][^)]*\)\s*[+*]"),
      "nested quantifier: a quantified group under another quantifier — exponential backtracking risk"),
@@ -62,7 +58,7 @@ _NONLINEAR_CONSTRUCTS: "tuple[tuple[re.Pattern[str], str], ...]" = (
 
 
 def lint_redos_pattern(pattern: str) -> list[str]:
-    """Return authoring-time ReDoS warnings for one regex pattern (never rejects; warn-only)."""
+    """Return mechanically detected catastrophic-backtracking risks for one regex pattern."""
     return [msg for rx, msg in _REDOS_LINTS if rx.search(pattern)]
 
 
@@ -72,6 +68,66 @@ def audit_pattern_construct(pattern: str) -> list[str]:
     The pre-work inventory for a deferred RE2/Rust swap — reported by ``fivedrisk validate --audit``.
     """
     return [name for rx, name in _NONLINEAR_CONSTRUCTS if rx.search(pattern)]
+
+
+def _unsafe_hard_floor_regex_reasons(pattern: str) -> list[str]:
+    """Reasons a regex is outside the closed safe subset allowed on a hard floor.
+
+    This is deliberately conservative. Python's backtracking engine has no portable timeout, so
+    RED/ORANGE floors reject classic catastrophic shapes plus backreferences/lookarounds rather
+    than accepting an unbounded expression on the live gate path.
+    """
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        return [f"invalid regex: {exc}"]
+    return lint_redos_pattern(pattern) + [
+        f"non-linear construct: {name}" for name in audit_pattern_construct(pattern)
+    ]
+
+
+def _hard_floor_regex_corpus(rule: "FloorRule") -> list[tuple[str, str]]:
+    """Regex-bearing fields whose evaluation can affect one RED/ORANGE floor."""
+    corpus: list[tuple[str, str]] = []
+    if rule.command_regex:
+        corpus.append(("command_regex", rule.command_regex))
+    if rule.patterns is not None:
+        corpus.extend(("patterns", pattern) for pattern in rule.patterns.values)
+    if rule.value_match is not None and rule.value_match.kind == "regex":
+        corpus.extend(("value_match", pattern) for pattern in rule.value_match.values)
+    return corpus
+
+
+def _unsafe_direct_hard_floor_regex(rule: "FloorRule", label: str) -> bool:
+    """Whether a directly constructed hard floor must fail closed before regex evaluation."""
+    if rule.band not in (Band.ORANGE, Band.RED):
+        return False
+    return any(
+        source == label and bool(_unsafe_hard_floor_regex_reasons(pattern))
+        for source, pattern in _hard_floor_regex_corpus(rule)
+    )
+
+
+def _validate_hard_floor_authoring(rule: "FloorRule") -> None:
+    """Reject hard-floor controls that cannot be executed with a bounded safe posture."""
+    if rule.band not in (Band.ORANGE, Band.RED):
+        return
+    if (
+        rule.patterns is not None
+        and rule.patterns.mode == "block"
+        and rule.patterns.negate_within > 0
+    ):
+        raise ValueError(
+            f"floor rule {rule.id or rule.tool_name or '<floor>'!r} uses token-window negation "
+            f"on a {rule.band.value} block floor; hard floors cannot suppress a pattern hit"
+        )
+    for source, pattern in _hard_floor_regex_corpus(rule):
+        reasons = _unsafe_hard_floor_regex_reasons(pattern)
+        if reasons:
+            raise ValueError(
+                f"floor rule {rule.id or rule.tool_name or '<floor>'!r} has unsafe regex in "
+                f"{source}: {pattern!r} ({'; '.join(reasons)})"
+            )
 
 
 def _regex_search(pattern: str, haystack: str) -> bool:
@@ -401,25 +457,30 @@ def _separator_links(gap: str) -> bool:
     return 0 < len(gap) <= _MAX_SEPARATOR_RUN and all(c in _GROUP_SEPARATORS for c in gap)
 
 
-def _digit_chains(text: str) -> "list[tuple[str, list[int]]]":
-    """Separator-linked digit runs, each as (ASCII-normalised digits, group-boundary offsets).
+def _digit_chains(text: str) -> "Iterator[tuple[str, list[int]]]":
+    """Yield separator-linked digit runs as digits plus group-boundary offsets.
 
     Normalisation is 1:1 per character, so the offsets index the normalised string directly.
     """
-    chains: "list[tuple[str, list[int]]]" = []
     current: "list[str]" = []
     prev_end = -1
     for m in _DIGIT_GROUP.finditer(text):
-        if current and _separator_links(text[prev_end:m.start()]):
+        gap_end = m.start()
+        gap_length = gap_end - prev_end
+        linked = (
+            bool(current)
+            and 0 < gap_length <= _MAX_SEPARATOR_RUN
+            and all(text[index] in _GROUP_SEPARATORS for index in range(prev_end, gap_end))
+        )
+        if linked:
             current.append(m.group(0))
         else:
             if current:
-                chains.append(_normalise(current))
+                yield _normalise(current)
             current = [m.group(0)]
         prev_end = m.end()
     if current:
-        chains.append(_normalise(current))
-    return chains
+        yield _normalise(current)
 
 
 def _normalise(groups: "list[str]") -> "tuple[str, list[int]]":
@@ -738,7 +799,8 @@ class AxisPredicate:
     ``match_mode`` applies to the ``patterns`` axis only: ``"any"`` fires on the first hit;
         ``"all"`` fires only when EVERY listed pattern co-occurs (the structurally-unambiguous
         multi-signal red line — e.g. a mod-97-valid IBAN AND a sanctioned prefix).
-    ``negate_within`` / ``negate_cues`` add a TOKEN-WINDOW negator to the ``patterns`` axis
+    ``negate_within`` / ``negate_cues`` add a TOKEN-WINDOW negator to a softer GREEN/YELLOW
+        ``patterns`` axis
         (0 = off, the default → byte-identical to the pre-negation matcher). When ``negate_within
         > 0`` and cues are given, a pattern hit is SUPPRESSED if any cue token separates from the
         match span by at most ``negate_within`` intervening whitespace tokens. This is NOT lookbehind
@@ -746,6 +808,8 @@ class AxisPredicate:
         scan over the already-matched span, so it is deterministic and backtracking-free. Negation
         only ever SUPPRESSES this axis's own ``patterns`` hit; it never touches a co-firing block-mode
         axis (AND-within — a multi-axis rule that also matches on tools/checksum/… still fires).
+        RED/ORANGE block floors reject this heuristic because a cue in another clause or sentence
+        must not suppress a hard-floor match.
     """
 
     values: tuple[str, ...] = ()
@@ -1239,11 +1303,15 @@ def match_red_line(
     if rule.command_regex is not None:
         specified = True
         _hay = _haystack(tool_input)
+        if _unsafe_direct_hard_floor_regex(rule, "command_regex"):
+            # A caller bypassed load/validation with direct dataclass construction. Treat the
+            # unsafe hard-floor predicate as matched without invoking Python's regex engine.
+            pass
         # ReDoS hygiene: never run the regex on an oversize haystack. Fail CLOSED —
         # an oversize input is treated as a MATCH (we do NOT `return False`), so a
         # dangerous command past the cap cannot silently escape this floor. Within
         # the cap, behaviour is byte-identical to the uncapped scan.
-        if len(_hay) <= _MAX_HAYSTACK_CHARS and not _regex_search(rule.command_regex, _hay):
+        elif len(_hay) <= _MAX_HAYSTACK_CHARS and not _regex_search(rule.command_regex, _hay):
             return False
 
     if rule.destinations is not None:
@@ -1255,7 +1323,22 @@ def match_red_line(
 
     if rule.patterns is not None:
         specified = True
-        if not _patterns_hit(rule.patterns, _haystack(tool_input)):
+        patterns = rule.patterns
+        if _unsafe_direct_hard_floor_regex(rule, "patterns"):
+            # Same fail-closed bypass handling as command_regex: no search is attempted.
+            pass
+        elif (
+            rule.band in (Band.ORANGE, Band.RED)
+            and patterns.mode == "block"
+            and patterns.negate_within > 0
+        ):
+            # Direct constructors skip the loader's prohibition. Hard floors evaluate the
+            # underlying match unsuppressed; token-window negation remains available only to
+            # softer GREEN/YELLOW classification floors.
+            patterns = replace(patterns, negate_within=0, negate_cues=())
+            if not _patterns_hit(patterns, _haystack(tool_input)):
+                return False
+        elif not _patterns_hit(patterns, _haystack(tool_input)):
             return False
 
     if rule.data_classes is not None:
@@ -1286,7 +1369,10 @@ def match_red_line(
         # Scope a predicate to a NAMED field's VALUE (case-insensitive KEY resolve), the one
         # composition the joined-haystack axes cannot express. AND-within: this suppresses only
         # itself — a co-firing block-mode axis above already `return`ed on its own miss.
-        if not _value_match_hit(rule.value_match, tool_input):
+        if _unsafe_direct_hard_floor_regex(rule, "value_match"):
+            # Fail closed before resolving or scanning the field value.
+            pass
+        elif not _value_match_hit(rule.value_match, tool_input):
             return False
 
     if rule.list_ref is not None:
@@ -1482,18 +1568,18 @@ def _parse_floor_rules(raw_floor: Any) -> list[FloorRule]:
                 )
         else:
             band = Band.RED   # a multi-axis red line is a hard block by construction
-        rules.append(
-            FloorRule(
-                id=str(entry.get("id", "")),
-                tool_name=str(tool_name) if tool_name else None,
-                band=band,
-                command_contains=str(command_contains) if command_contains else None,
-                command_regex=str(command_regex) if command_regex else None,
-                reason=str(entry.get("reason", "")),
-                value_match=value_match,
-                **axes,
-            )
+        rule = FloorRule(
+            id=str(entry.get("id", "")),
+            tool_name=str(tool_name) if tool_name else None,
+            band=band,
+            command_contains=str(command_contains) if command_contains else None,
+            command_regex=str(command_regex) if command_regex else None,
+            reason=str(entry.get("reason", "")),
+            value_match=value_match,
+            **axes,
         )
+        _validate_hard_floor_authoring(rule)
+        rules.append(rule)
     return rules
 
 
