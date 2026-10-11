@@ -76,7 +76,9 @@ fields it tests, so scope each one to the tools it is meant to govern.
 ## 6. Verify
 
 ```bash
-python -m fivedrisk validate policy.yaml    # policy loads + ranges/regex compile
-python -m fivedrisk log --recent 20         # confirm decisions are being logged
-python -m fivedrisk stats                    # band breakdown
+# Reuse the interpreter selected for installation (see the quickstart).
+: "${PYTHON_BIN:?set PYTHON_BIN to the Python used to install fivedrisk}"
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap validate policy.yaml    # policy loads + ranges/regex compile
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap log --recent 20         # confirm decisions are being logged
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap stats                    # band breakdown
 ```

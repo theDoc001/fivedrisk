@@ -123,6 +123,14 @@ def classify_tool_call(
     Returns:
         A fully-scored Action ready for scoring.
     """
+    if type(tool_name) is not str or not tool_name.strip():
+        raise ValueError("tool_name must be a non-empty string")
+    if type(tool_input) is not dict:
+        raise TypeError("tool_input must be a dictionary")
+    if autonomy_context is not None and (
+        type(autonomy_context) is not int or not 0 <= autonomy_context <= 4
+    ):
+        raise ValueError("autonomy_context must be an integer in [0, 4]")
     if policy is None:
         policy = Policy()
 
@@ -164,7 +172,7 @@ def classify_tool_call(
 
     # Step 5: Autonomy context (hybrid: explicit int wins, else derive)
     if autonomy_context is not None:
-        dims["autonomy_context"] = max(0, min(4, autonomy_context))
+        dims["autonomy_context"] = autonomy_context
     elif autonomy_signals is not None:
         dims["autonomy_context"] = autonomy_signals.derive_autonomy_context()
     else:

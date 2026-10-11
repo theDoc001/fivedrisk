@@ -1,0 +1,66 @@
+source:
+  kind: {value: goals_description, basis: operator-stated, confirmation_status: confirmed}
+  raw_content_stored: false
+agent:
+  mission_summary: {value: "Summarize approved public support articles", basis: operator-stated, confirmation_status: confirmed}
+  framework: {value: "OpenAI Agents SDK", basis: operator-stated, confirmation_status: confirmed}
+  execution_boundary: {value: "tool input guardrail", basis: inferred, confirmation_status: proposed}
+  unresolved:
+    items:
+      - {value: "durable audit retention period", basis: unresolved, confirmation_status: unresolved}
+    basis: unresolved
+    confirmation_status: unresolved
+tools:
+  items:
+    - basis: operator-stated
+      confirmation_status: confirmed
+      name: {value: "search_public_docs", basis: operator-stated, confirmation_status: confirmed}
+      actions:
+        items:
+          - {value: "search", basis: operator-stated, confirmation_status: confirmed}
+        basis: operator-stated
+        confirmation_status: confirmed
+      data_classes:
+        items:
+          - {value: "public", basis: operator-stated, confirmation_status: confirmed}
+        basis: operator-stated
+        confirmation_status: confirmed
+      destinations:
+        items:
+          - {value: "approved documentation domains", basis: operator-stated, confirmation_status: confirmed}
+        basis: operator-stated
+        confirmation_status: confirmed
+      dimensions:
+        data_sensitivity: {value: 0, basis: operator-stated, confirmation_status: confirmed}
+        tool_privilege: {value: 1, basis: inferred, confirmation_status: proposed}
+        reversibility: {value: 0, basis: inferred, confirmation_status: proposed}
+        external_impact: {value: 1, basis: inferred, confirmation_status: proposed}
+        autonomy_context: {value: 1, basis: operator-stated, confirmation_status: confirmed}
+  basis: operator-stated
+  confirmation_status: confirmed
+acceptance_cases:
+  allowed:
+    items:
+      - {value: "Search an approved public documentation domain", basis: operator-stated, confirmation_status: confirmed}
+    basis: operator-stated
+    confirmation_status: confirmed
+  approval_required: {items: [], basis: operator-stated, confirmation_status: confirmed}
+  refused:
+    items:
+      - {value: "Send or modify external content", basis: operator-stated, confirmation_status: confirmed}
+    basis: operator-stated
+    confirmation_status: confirmed
+  sequences: {items: [], basis: unresolved, confirmation_status: unresolved}
+controls:
+  approval_channel: {value: none, basis: operator-stated, confirmation_status: confirmed}
+  audit_path: {value: null, basis: unresolved, confirmation_status: unresolved}
+  session_identity: {value: null, basis: unresolved, confirmation_status: unresolved}
+  retention_owner: {value: null, basis: unresolved, confirmation_status: unresolved}
+  tool_spend_envelope: {value: null, basis: unresolved, confirmation_status: unresolved}
+  observer_inference_budget: {value: null, basis: unresolved, confirmation_status: unresolved}
+observer:
+  mode: {value: none, basis: operator-stated, confirmation_status: confirmed}
+  routed_ambiguities: {items: [], basis: operator-stated, confirmation_status: confirmed}
+  unavailable_disposition: {value: block, basis: operator-stated, confirmation_status: confirmed}
+  thresholds_status: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}
+  evidence_status: {value: design_only, basis: operator-stated, confirmation_status: confirmed}

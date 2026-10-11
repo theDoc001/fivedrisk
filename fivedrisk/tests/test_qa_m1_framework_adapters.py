@@ -150,7 +150,7 @@ class TestRedBlocksEverywhere:
 
 
 # ============================================================================
-# INVARIANT 2 — ORANGE/APPROVE: channel=False must BLOCK, channel=True must ALLOW
+# INVARIANT 2 — ORANGE/APPROVE: a static channel declaration never authorizes a call
 # (driven by a synthetic verdict so the branch is exercised precisely)
 # ============================================================================
 def _force_orange(monkeypatch):
@@ -173,12 +173,12 @@ class TestApprovalChannel:
         else:
             assert runner(*args, has_channel=False) == "BLOCK"
 
-    def test_orange_allows_with_channel(self, runner, args, monkeypatch):
+    def test_orange_blocks_with_only_channel_declaration(self, runner, args, monkeypatch):
         _force_orange(monkeypatch)
         if args == (None, None):
-            assert runner(has_channel=True) == "ALLOW"
+            assert runner(has_channel=True) == "BLOCK"
         else:
-            assert runner(*args, has_channel=True) == "ALLOW"
+            assert runner(*args, has_channel=True) == "BLOCK"
 
 
 # ============================================================================

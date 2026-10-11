@@ -176,17 +176,22 @@ def test_documented_gate_command_ignores_hostile_pythonpath(tmp_path: Path):
     assert "hostile PYTHONPATH" not in result.stderr
 
 
-def test_bootstrap_workflow_invokes_gate_with_isolated_python():
-    workflow = (ROOT / ".github" / "workflows" / "release-gate.yml").read_text(
-        encoding="utf-8"
-    )
-    gate_lines = [
-        line.strip()
-        for line in workflow.splitlines()
-        if "tools/release_window.py" in line and "python" in line
-    ]
-    assert gate_lines
-    assert all(
-        re.search(r"python3? -I tools/release_window.py --action merge", line)
-        for line in gate_lines
-    )
+def test_every_shipped_gate_invocation_uses_isolated_python():
+    hook = (ROOT / ".githooks" / "pre-push").read_text(encoding="utf-8")
+    assert 'python3 -I "$gate" --action push' in hook
+    for workflow_name in ("release-gate.yml", "publish.yml"):
+        workflow = (ROOT / ".github" / "workflows" / workflow_name).read_text(
+            encoding="utf-8"
+        )
+        gate_lines = [
+            line.strip()
+            for line in workflow.splitlines()
+            if "tools/release_window.py" in line
+            and "python" in line
+            and "grep -F" not in line
+        ]
+        assert gate_lines
+        assert all(
+            re.search(r"python3? -I tools/release_window.py", line)
+            for line in gate_lines
+        )

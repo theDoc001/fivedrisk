@@ -495,7 +495,7 @@ def _collect_floor_regex_patterns(policy) -> "list[tuple[str, str]]":
 
 
 def _redos_lint_warnings(policy_path: str | None) -> list[str]:
-    """Warn (never reject) when a floor regex trips a classic catastrophic-backtracking shape."""
+    """Warn on risky soft-floor regexes; hard floors are rejected while loading the policy."""
     if policy_path is None:
         return []
     try:

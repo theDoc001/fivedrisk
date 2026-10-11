@@ -92,13 +92,14 @@ class TestCrewAI:
         hook = fa.make_crewai_pre_tool_hook(_hook_aborted=_FakeHookAborted)
         assert hook(_FakeCtx(*GREEN)) is None
 
-    def test_orange_blocks_without_channel_allows_with(self, monkeypatch):
+    def test_orange_blocks_even_with_static_channel_flag(self, monkeypatch):
         _synthetic(monkeypatch, "ORANGE", APPROVE)
         blocking = fa.make_crewai_pre_tool_hook(_hook_aborted=_FakeHookAborted)
         with pytest.raises(_FakeHookAborted):
             blocking(_FakeCtx(*GREEN))
-        allowing = fa.make_crewai_pre_tool_hook(_hook_aborted=_FakeHookAborted, has_approval_channel=True)
-        assert allowing(_FakeCtx(*GREEN)) is None
+        declared = fa.make_crewai_pre_tool_hook(_hook_aborted=_FakeHookAborted, has_approval_channel=True)
+        with pytest.raises(_FakeHookAborted):
+            declared(_FakeCtx(*GREEN))
 
     def test_missing_crewai_raises_helpful_importerror(self):
         # real block path with no injected class and crewai absent → clear install hint
@@ -260,3 +261,41 @@ class TestGateDecision:
         _synthetic(monkeypatch, "RED", BLOCK)
         d = fa._gate_decision("Bash", {}, None, None, False, None, "t")
         assert d.block is True and "synthetic RED" in d.reason
+
+
+def _invoke_adapter(factory: str, *, has_approval_channel=True, policy=None):
+    options = {"has_approval_channel": has_approval_channel, "policy": policy}
+    if factory == "crewai":
+        hook = fa.make_crewai_pre_tool_hook(_hook_aborted=_FakeHookAborted, **options)
+        try:
+            hook(_FakeCtx(*GREEN))
+            return True
+        except _FakeHookAborted:
+            return False
+    if factory == "adk":
+        return fa.make_adk_before_tool_callback(**options)(_FakeTool(GREEN[0]), GREEN[1], None) is None
+    if factory == "openai":
+        hook = fa.make_openai_tool_input_guardrail(_output_cls=_FakeGuardrailOutput, **options)
+        return hook(_FakeGuardrailData(GREEN[0], '{"file_path":"/tmp/a"}')).kind == "allow"
+    if factory == "pydantic":
+        recorder = _CallToolRecorder("REAL")
+        asyncio.run(fa.make_pydantic_process_tool_call(**options)(None, recorder, *GREEN))
+        return recorder.called
+    context, recorder = _FakeMSContext(*GREEN), _NextRecorder()
+    asyncio.run(fa.make_ms_agent_framework_middleware(**options)(context, recorder))
+    return recorder.called
+
+
+@pytest.mark.parametrize("factory", ["crewai", "adk", "openai", "pydantic", "microsoft"])
+def test_every_adapter_holds_orange_despite_static_channel_declaration(monkeypatch, factory):
+    _synthetic(monkeypatch, "ORANGE", APPROVE)
+    assert _invoke_adapter(factory) is False
+    assert _invoke_adapter(factory, has_approval_channel=False) is False
+
+
+@pytest.mark.parametrize("factory", ["crewai", "adk", "openai", "pydantic", "microsoft"])
+def test_real_orange_scoring_holds_in_every_adapter(factory):
+    from fivedrisk.policy import Policy
+    policy = Policy(tool_defaults={"Read": {"tool_privilege": 3}})
+    assert fa.to_verdict(*GREEN, policy).band == "ORANGE"
+    assert _invoke_adapter(factory, policy=policy) is False

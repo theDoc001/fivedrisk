@@ -1,0 +1,267 @@
+name: Publish release
+
+on:
+  schedule:
+    - cron: "5 17 * * *"
+    - cron: "5 18 * * *"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: slot
+        name: Select the active Europe/Tirane DST slot
+        if: github.event_name == 'schedule'
+        run: |
+          set +e
+          python3 -I tools/release_window.py --action workflow-dispatch --scheduled-expression '${{ github.event.schedule }}'
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo 'active=true' >> "$GITHUB_OUTPUT"
+          elif [ "$status" -eq 3 ]; then
+            echo 'active=false' >> "$GITHUB_OUTPUT"
+          else
+            exit "$status"
+          fi
+
+      - id: metadata
+        name: Bind merged main to the independently cleared tree
+        if: steps.slot.outputs.active == 'true'
+        env:
+          RELEASE_CANDIDATE_SHA: ${{ vars.FIVEDRISK_RELEASE_CANDIDATE_SHA }}
+          QA_VERDICT_SHA: ${{ vars.FIVEDRISK_QA_VERDICT_SHA }}
+          RELEASE_CANDIDATE_TREE: ${{ vars.FIVEDRISK_RELEASE_CANDIDATE_TREE }}
+          QA_VERDICT_TREE: ${{ vars.FIVEDRISK_QA_VERDICT_TREE }}
+        run: |
+          test "$GITHUB_EVENT_NAME" = 'schedule'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test -n "$RELEASE_CANDIDATE_SHA"
+          test -n "$QA_VERDICT_SHA"
+          test -n "$RELEASE_CANDIDATE_TREE"
+          test -n "$QA_VERDICT_TREE"
+          test "$RELEASE_CANDIDATE_SHA" = "$QA_VERDICT_SHA"
+          test "$RELEASE_CANDIDATE_SHA" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$(git rev-parse --verify HEAD)"
+          test "$RELEASE_CANDIDATE_SHA" = "$(git rev-parse --verify "$RELEASE_CANDIDATE_SHA^{commit}")"
+          test "$RELEASE_CANDIDATE_TREE" = "$QA_VERDICT_TREE"
+          test "$RELEASE_CANDIDATE_TREE" = "$(git rev-parse --verify "$RELEASE_CANDIDATE_SHA^{tree}")"
+          test "$RELEASE_CANDIDATE_TREE" = "$(git rev-parse "$GITHUB_SHA^{tree}")"
+          version=$(sed -n '/^\[project\]$/,/^\[/s/^version = "\([^"]*\)"$/\1/p' pyproject.toml)
+          test "$version" = '0.7.1'
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-python@v5
+        if: steps.metadata.outputs.version != ''
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        if: steps.metadata.outputs.version != ''
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clients/typescript/package-lock.json
+
+      - name: Install release tooling and package
+        if: steps.metadata.outputs.version != ''
+        run: |
+          python -m pip install --disable-pip-version-check ".[langgraph,dev]"
+          python -m pip install --disable-pip-version-check \
+            build==1.5.0 setuptools==82.0.1 twine==6.2.0 wheel==0.47.0
+
+      - name: Run Python release checks
+        if: steps.metadata.outputs.version != ''
+        run: |
+          pytest fivedrisk/tests -q
+          python -I -m json.tool fivedrisk-plugin/plugin.json >/dev/null
+          python -I -m json.tool fivedrisk-plugin/.codex-plugin/plugin.json >/dev/null
+          python -I - <<'PY'
+          import json
+          from pathlib import Path
+          root = json.loads(Path('fivedrisk-plugin/plugin.json').read_text())
+          codex = json.loads(Path('fivedrisk-plugin/.codex-plugin/plugin.json').read_text())
+          for key in ('name', 'version', 'description', 'author', 'homepage', 'repository', 'license', 'keywords'):
+              assert root[key] == codex[key], key
+          PY
+
+      - name: Run TypeScript release gate
+        if: steps.metadata.outputs.version != ''
+        working-directory: clients/typescript
+        env:
+          FIVEDRISK_PY: ${{ env.pythonLocation }}/bin/python
+        run: |
+          npm ci
+          npm run test:release
+
+      - name: Build one reproducible, checksum-verified artifact set
+        if: steps.metadata.outputs.version != ''
+        run: |
+          python -m build --no-isolation
+          python -I tools/normalize_sdist.py dist/fivedrisk-*.tar.gz
+          python -m twine check dist/*
+          python -I tools/verify_wheel.py dist/fivedrisk-*.whl
+          python -I tools/build_plugin_archive.py \
+            --git-ref "$GITHUB_SHA" \
+            --variant public \
+            --output "dist/fivedrisk-plugin-public-${{ steps.metadata.outputs.version }}.zip"
+          python -I tools/build_plugin_archive.py \
+            --git-ref "$GITHUB_SHA" \
+            --variant manual \
+            --output "dist/fivedrisk-plugin-manual-${{ steps.metadata.outputs.version }}.zip"
+          python -I tools/artifact_checksums.py --write dist
+          python -I tools/artifact_checksums.py --verify dist
+
+      - name: Recheck immediately before provenance attestation
+        if: steps.metadata.outputs.version != ''
+        run: python -I tools/release_window.py --action attestation
+
+      - name: Bind artifact digests to this exact candidate SHA
+        if: steps.metadata.outputs.version != ''
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
+
+      - id: state
+        name: Classify all remote release surfaces
+        if: steps.metadata.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          python -I tools/release_state.py \
+            --version "$VERSION" \
+            --candidate-sha "$GITHUB_SHA" \
+            --repository "$GITHUB_REPOSITORY" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Select only missing PyPI files
+        if: steps.metadata.outputs.version != '' && steps.state.outputs.pypi != 'matching-complete'
+        env:
+          MISSING: ${{ steps.state.outputs.missing_pypi }}
+        run: |
+          mkdir publish-dist
+          old_ifs=$IFS
+          IFS=,
+          for name in $MISSING; do cp "dist/$name" publish-dist/; done
+          IFS=$old_ifs
+
+      - name: Recheck immediately before PyPI mutation
+        if: steps.metadata.outputs.version != '' && steps.state.outputs.pypi != 'matching-complete'
+        run: python -I tools/release_window.py --action package-publish
+
+      - name: Publish only missing, attested package files
+        if: steps.metadata.outputs.version != '' && steps.state.outputs.pypi != 'matching-complete'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: publish-dist
+
+      - id: after_pypi
+        name: Verify PyPI before advancing
+        if: steps.metadata.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if python -I tools/release_state.py \
+              --version "$VERSION" \
+              --candidate-sha "$GITHUB_SHA" \
+              --repository "$GITHUB_REPOSITORY" \
+              --github-output "$GITHUB_OUTPUT"; then
+              state=$(grep '^pypi=' "$GITHUB_OUTPUT" | tail -1)
+              test "$state" = 'pypi=matching-complete' && exit 0
+            fi
+            test "$attempt" -lt 5
+            sleep 15
+          done
+          exit 2
+
+      - name: Recheck immediately before tag mutation
+        if: steps.after_pypi.outputs.tag == 'absent'
+        run: python -I tools/release_window.py --action tag
+
+      - name: Create the exact annotated release tag
+        if: steps.after_pypi.outputs.tag == 'absent'
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          git -c user.name='fivedrisk release' -c user.email='actions@users.noreply.github.com' \
+            tag -a "v$VERSION" "$GITHUB_SHA" -m "fivedrisk $VERSION"
+          git push origin "v$VERSION"
+
+      - id: after_tag
+        name: Reclassify after tag stage
+        if: steps.metadata.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          python -I tools/release_state.py \
+            --version "$VERSION" \
+            --candidate-sha "$GITHUB_SHA" \
+            --repository "$GITHUB_REPOSITORY" \
+            --github-output "$GITHUB_OUTPUT"
+          state=$(grep '^tag=' "$GITHUB_OUTPUT" | tail -1)
+          test "$state" = 'tag=matching'
+
+      - name: Recheck immediately before creating the GitHub release
+        if: steps.after_tag.outputs.release == 'absent'
+        run: python -I tools/release_window.py --action github-release
+
+      - name: Create GitHub release with the attested artifact set
+        if: steps.after_tag.outputs.release == 'absent'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          gh release create "v$VERSION" dist/* \
+            --title "fivedrisk $VERSION" --generate-notes --verify-tag
+
+      - name: Add only missing, digest-matched GitHub release assets
+        if: steps.after_tag.outputs.release == 'matching-partial' && steps.after_tag.outputs.missing_release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          MISSING: ${{ steps.after_tag.outputs.missing_release }}
+        run: |
+          old_ifs=$IFS
+          IFS=,
+          for name in $MISSING; do
+            python -I tools/release_window.py --action github-release
+            gh release upload "v$VERSION" "dist/$name"
+          done
+          IFS=$old_ifs
+
+      - name: Publish a matching draft only after all assets are present
+        if: steps.after_tag.outputs.release == 'matching-partial' && steps.after_tag.outputs.release_is_draft == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          python -I tools/release_window.py --action github-release
+          gh release edit "v$VERSION" --draft=false
+
+      - name: Verify complete converged release state
+        if: steps.metadata.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          output=$(python -I tools/release_state.py \
+            --version "$VERSION" \
+            --candidate-sha "$GITHUB_SHA" \
+            --repository "$GITHUB_REPOSITORY")
+          python -I -c 'import json,sys; s=json.loads(sys.argv[1]); assert (s["pypi"],s["tag"],s["release"]) == ("matching-complete","matching","matching-complete")' "$output"

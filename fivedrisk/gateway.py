@@ -61,6 +61,10 @@ Decision shape (JSON object):
 Trace propagation uses the existing ``Action.metadata`` dict (no schema
 migration). The audit log already persists ``metadata`` as JSON; the
 SIEM correlation fields ride through that surface.
+
+In stdio mode the first line is a handshake containing ``ready``, ``engine``,
+``engine_version``, and ``protocol_version``. Clients must validate all four
+before treating the gateway as compatible.
 """
 
 from __future__ import annotations
@@ -72,6 +76,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from . import __version__
 from .adapters import to_verdict
 from .logger import DEFAULT_LOG_PATH, DecisionLog
 from .policy import Policy, load_policy
@@ -128,7 +133,11 @@ def score_action_dict(
     if not isinstance(request, dict):
         return {"error": "request must be a JSON object", "error_type": "InvalidRequest"}
 
-    tool_name = request.get("tool_name") or request.get("name")
+    tool_name = (
+        request.get("tool_name")
+        if "tool_name" in request
+        else request.get("name")
+    )
     tool_input = request.get("params")
     if tool_input is None:
         tool_input = request.get("tool_input", {})
@@ -195,7 +204,8 @@ def serve_stdio(policy_path: Optional[str] = None, log_path: Optional[str] = Non
     line. Exits cleanly when stdin reaches EOF.
 
     C1: on startup, BEFORE reading any request, emits a single handshake line
-    ``{"ready": true, "protocol_version": N, "engine": "fivedrisk"}``. Clients
+    ``{"ready": true, "protocol_version": N, "engine": "fivedrisk",
+    "engine_version": "X.Y.Z"}``. Clients
     wait for this (with a startup timeout) instead of hanging forever for the
     first response. When a request carries an ``id``, it is echoed back on the
     response so a client can correlate concurrent calls.
@@ -209,7 +219,12 @@ def serve_stdio(policy_path: Optional[str] = None, log_path: Optional[str] = Non
     # C1: startup handshake so the client can detect readiness with a timeout.
     sys.stdout.write(
         json.dumps(
-            {"ready": True, "protocol_version": PROTOCOL_VERSION, "engine": "fivedrisk"}
+            {
+                "ready": True,
+                "protocol_version": PROTOCOL_VERSION,
+                "engine": "fivedrisk",
+                "engine_version": __version__,
+            }
         )
         + "\n"
     )
@@ -230,7 +245,13 @@ def serve_stdio(policy_path: Optional[str] = None, log_path: Optional[str] = Non
         else:
             if isinstance(request, dict):
                 request_id = request.get("id")
-            response = score_action_dict(request, policy, log=log)
+            try:
+                response = score_action_dict(request, policy, log=log)
+            except Exception as exc:
+                response = {
+                    "error": f"request processing failed: {exc}",
+                    "error_type": type(exc).__name__,
+                }
 
         # C1: echo request id for concurrent-call correlation.
         if request_id is not None:

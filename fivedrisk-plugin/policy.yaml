@@ -1,5 +1,7 @@
 # 5D Risk Governance Engine — Plugin Default Policy
 # 4-band system (GREEN / YELLOW / ORANGE / RED)
+# Starter template only: the bundled hook does not load this file automatically.
+# Copy it to an operator-owned path, validate it, and pass that path with --policy.
 
 version: "0.1.0"
 

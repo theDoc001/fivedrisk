@@ -5,14 +5,115 @@ All notable changes to **fivedrisk** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [0.7.1] - 2026-10-06
+
+> ## 🔴 SECURITY RELEASE. Upgrade integrations to 0.7.1.
+>
+> Version 0.7.0 contains the deterministic-floor corrections below, but its bundled
+> Claude and TypeScript integration paths can be bypassed by a cwd-local Python
+> package shadow. The TypeScript wrappers can also score an attacker-controlled
+> `toJSON()` representation and execute the different original object. The Python
+> `@gate` decorator likewise stringified caller objects for scoring and then executed
+> the originals, and the setup verifier executed an unverified cwd-local import before
+> rejecting its provenance.
+
+- Security-sensitive child launches now use `python -I -m fivedrisk._bootstrap`.
+  The bootstrap requires stable `>=0.7.1,<0.8.0` and verifies that the imported
+  package directory matches the installed distribution record before dispatch.
+- The TypeScript gateway now exposes `prepareScore()`, accepts only data-only JSON,
+  snapshots it before the first await, and makes Vercel/Genkit execute only that
+  detached snapshot. Accessors, custom prototypes/serialization, cycles, sparse
+  arrays, non-finite numbers, and non-JSON values fail closed.
+- Non-object gateway frames are fatal protocol violations that block pending calls
+  without crashing the host. Arbitrary custom gateway argv is rejected; the exact
+  deprecated legacy argv is normalized to the isolated bootstrap.
+- The TypeScript gateway requires an explicit Python command, rejects incompatible
+  handshakes, keeps ORANGE blocked despite the deprecated approval-channel flag,
+  lets any `error` property dominate, and converts serialization/write failures to BLOCK.
+- Python framework adapters and the shared sentinel helper likewise always hold
+  ORANGE. The accepted `has_approval_channel` keyword is now ignored: a static
+  declaration does not approve an individual call. Host applications own human
+  review and authorized continuation; Claude's native hook still returns `ask`.
+- The Claude plugin uses structured all-tool hooks, normalizes every supported output
+  field, and validates/canonicalizes the child JSON schema. Empty, malformed,
+  wrong-event, incomplete, or ambiguous successful output fails closed.
+- Both outer Claude hook launchers now use Python isolated mode before the launcher
+  imports any standard-library module, preventing cwd/`PYTHONPATH` shadows from
+  forging a child result. Hostile `subprocess` shadow tests cover both hook phases.
+- Python `@gate` now detaches exact built-in action data once, derives policy input from
+  that snapshot, and executes only the snapshot. Custom objects, subclasses, cycles,
+  and non-finite values raise `GateInputError` or route through `on_block` before the
+  protected callable runs.
+- Python `@gate` no longer exempts parameters named `self` or `cls`: custom instance,
+  class, and metaclass receivers fail closed like every other custom object. Gate a
+  static or free data-only boundary function instead. Bash gates additionally require
+  one exact built-in string `command`; argv lists/tuples and variadic forms fail closed.
+- The setup verifier proves distribution/spec provenance in isolated mode without
+  importing package code first. It is safe and reproducible from a source checkout,
+  neutral directory, or hostile cwd/PYTHONPATH.
+- Every independent public install/quickstart workflow now performs the same
+  standard-library-only isolated provenance check before its first package import or
+  execution. Public `policy.yaml` examples are population-tested for error- and
+  warning-free validation.
+- The setup playbook now runs that verifier before any package import or execution and
+  invokes its simulation with isolated Python. Its JSON CLI examples place global
+  options before the subcommand.
+- The setup skill v0.7.0 now begins with a privacy-safe deployment consultation. It
+  derives a non-runtime deployment profile from either a redacted system prompt or an agent
+  goals/boundaries description, preserves unknowns instead of guessing, and compares
+  deterministic-only governance with design-only general observer-LLM and TypeSafe Jev
+  options. No production observer integration or OpenAI directory approval is claimed.
+- The plugin includes root OpenAI presentation metadata and packaged onboarding, plus
+  a matching Codex compatibility manifest. The release builds two deterministic ZIPs
+  from the same immutable commit: `fivedrisk-plugin-public-0.7.1.zip` is hooks-free and
+  advisory; `fivedrisk-plugin-manual-0.7.1.zip` retains the reviewed Claude integration.
+  Manual Codex desktop can support host-specific hooks, but no Codex hook adapter ships
+  here. Hook-containing packages are not eligible for the public plugin directory.
+- The legacy instruction-only `five-d-score` skill was removed because its static weights
+  and verdict thresholds duplicated and could contradict the configured runtime. Use
+  `fivedrisk-setup` with a supported runtime adapter instead.
+- A fail-closed Europe/Tirane release-window gate, tracked pre-push hook, agent routing
+  instructions, and gated release workflows constrain external mutations to 19:00-07:00.
+- Release-gate invocations now use isolated Python so `PYTHONPATH` cannot shadow timezone
+  logic. A fresh-clone installer activates and verifies the tracked hook, and managed
+  GitHub rulesets protect the default branch and make release tags immutable.
+- Publication now runs the TypeScript release gate, emits verifiable root-relative
+  checksums, normalizes source-distribution metadata, attests one reproducible artifact
+  set (including both exact versioned public/manual plugin ZIPs) to the cleared commit, and safely
+  resumes only matching partial PyPI/tag/GitHub release states. Conflicts fail closed.
+- Scheduled publication binds the cleared commit to the actual workflow commit and
+  resolves its Git tree. Wheel and source-archive checks reject unsafe names,
+  duplicates, conflicting paths, links, devices, privileged modes and ambiguous
+  archive framing. Checksum and release-artifact enumeration reject symlinks,
+  including indirect roots, parents and manifests, using no-follow filesystem opens.
+- The TypeScript client now requires a complete, well-typed scored response before
+  GREEN/YELLOW can execute. Incomplete, contradictory, or non-finite protocol frames
+  resolve to synthetic RED/block; a complete pre-score denial remains a blocking frame.
+- TypeScript data canonicalization rejects root, nested, array, and revoked Proxies via
+  Node's trap-free proxy check before any reflection. The npm package builds on pack;
+  release checks assert runtime/type files, install the tarball into an empty consumer,
+  import its public API, and require a live Python-gateway test without skips.
+- Shared gateway/adapter validation now requires an exact non-empty string tool name,
+  exact integer autonomy in `0..4`, and a null or exact-string session id. Invalid
+  values return BLOCK/`InvalidRequest`; explicit autonomy is never clamped. The stdio
+  gateway contains unexpected processing errors to one correlated frame and continues.
+- Python wheels now contain only `fivedrisk` runtime modules and required runtime data.
+  Repository tests and partial plugin/setup-skill fragments are excluded; the complete
+  plugin remains a separately verified repository/plugin artifact. The wheel also ships
+  the PEP 561 `py.typed` marker promised by its `Typing :: Typed` classifier.
+- Public gateway commands use the provenance-checking bootstrap correctly, and the
+  public candidate manifest is restricted to reviewed release files. A stale internal
+  architecture/backlog artifact and its runtime provenance labels are excluded.
+- The repository README no longer advertises a hand-maintained test count.
+
 ## [0.7.0] - 2026-09-14
 
 > ## 🔴 SECURITY RELEASE. Upgrade if you rely on the deterministic floor.
 >
 > **Affected versions: 0.6.0 and earlier, including the current PyPI release.**
-> Two defects let an action that should have been floored pass at a lower band, or not fire at all.
-> Both are fixed here. Neither requires a configuration change to be exposed; if you use `checksum`
-> floor axes or a rule set that mixes floor bands, you were affected by default.
+> Four defects could let a floor miss, report too low a band, suppress a hard-floor match, or hang
+> the gate. All are fixed here. SEC-1 and SEC-2 require no configuration change to be exposed;
+> SEC-3 and SEC-4 affect operator-authored regex and token-window-negation floor controls.
 >
 > **SEC-1 — the checksum axis could read across a field boundary (fail-open).** Candidate extraction
 > joined the whole tool input into one haystack, so digits from two adjacent fields could form a
@@ -37,9 +138,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 > YELLOW where `Policy.matched_floor` over the identical rules returned RED. **List position decided
 > a security verdict.** Detail in the Fixed section below.
 >
+> **SEC-3 — catastrophic operator regexes could hang a RED/ORANGE floor.** The input-length cap
+> bounded input size, not Python regex backtracking time; patterns such as `(a+)+$` can stall on a
+> few dozen characters. Hard floors now reject mechanically unsafe regex constructs at load and
+> validation time. A directly constructed rule that bypasses the loader fails closed without
+> invoking the unsafe regex engine path.
+>
+> **SEC-4 — token-window negation could suppress a hard-floor match across clauses or sentences.**
+> RED/ORANGE block floors now reject token-window negation. A directly constructed rule cannot use
+> it to suppress the underlying match; the hard-floor pattern is evaluated unsuppressed. The
+> heuristic remains available only for softer GREEN/YELLOW classification floors.
+>
 > **What to do**: upgrade, then re-run any stored analysis that depended on floor outcomes. Decisions
 > already written to your audit log were recorded as they were computed and are not rewritten by this
-> release.
+> release. Policies using RED/ORANGE regex floors or `negate_within` must pass `fivedrisk validate`
+> before deployment; rejected expressions require a bounded safe rewrite.
 
 ### Changed — BREAKING: `retry_budget` is now enforced, and is opt-in
 
@@ -131,7 +244,7 @@ Both are warnings rather than errors, so no policy that validated before fails n
 - **Floor attribution on the decision record: `ScoredAction.fired_rule_id` and `ScoredAction.floor_band`**, persisted as two nullable `decisions` columns. When a policy floor raises an action's band, the record now says WHICH rule did it and at what band, in a queryable field. Previously the only trace was prose appended to `rationale` (`"… [reason text]"`), degrading to the bare string `"floor:RED"` for a rule with no `reason` — so "a benign action was caught, show me the rule rather than the verdict" was a text-search question, and an unnamed floor rule was indistinguishable from no floor at all. `FloorRule.id` already existed and was simply discarded by the scorer; nothing new is computed. Two fields rather than one because `FloorRule.id` defaults to `""`: `floor_band` is set whenever a floor matched (that is what makes a hit observable), `fired_rule_id` only when the rule is named. Both are `None` when no floor matched, and `to_dict()` OMITS them in that case, so an unfloored action serialises byte-identically to before. `rationale` is unchanged — this adds a field, it does not move a fact out of a string. Attribution names the rule whose band was ENFORCED (the `matched_floor` winner), never an earlier weaker match. A pre-existing decision log is migrated on open with additive `ALTER TABLE`; historical rows read back `NULL` rather than a backfilled guess. New regression suite `tests/test_fired_rule_id_attribution.py`.
 - **Audit-record columns: `config_hash` and the `prev_hash` / `record_hash` chain seam**, plus `Policy.content_hash()` and `DecisionLog.verify_chain()`. `policy_version` is a string the author types: two deployments can both say `0.2.0` with different thresholds, weights and floor rules, and a policy can change while its version stays the same — the case that matters when someone asks why an action scored differently last month. `config_hash` records which policy CONTENT decided (supply `policy.content_hash()` to `log()`; optional, so existing callers are unaffected). `record_hash` covers a row's decision-time fields folded together with the previous row's hash, so editing or deleting a row invalidates every later row rather than only its own, and `verify_chain()` reports the first row that does not recompute. **Stated limits, because an over-read integrity check is worse than none**: the chain deliberately excludes `outcome` / `outcome_history`, which are mutable by design — including them would make verification fail on ordinary authorised use, and an alarm that fires on correct work is one people learn to click past. It is tamper-EVIDENCE, not proof: the database is a local file, and anything that can write it can rewrite the tail. `content_hash()` is a content digest, not a signature — it proves two policies are the same policy, not that either is authentic.
 - **All six new columns are additive and nullable, and old rows are never back-filled.** `DecisionLog.MIGRATION_NOTE` states what a pre-0.7.0 row cannot answer, in the words a reader needs: NULL in these columns means **the column did not exist when the row was written**, never "there was no identity", "no policy applied" or "the chain is intact". They cannot be back-filled — the identity and the policy content are not recoverable from a stored row, and a hash chain computed now over rows written earlier would attest to nothing. New suite `tests/test_decision_log_audit_columns.py`, including migration of a pre-existing log.
-- **Public floor-rule compilers: `fivedrisk.parse_axis_predicate` and `fivedrisk.parse_value_match`**, plus `FieldValuePredicate` on the package root. `load_policy` compiles the `floor:` block for you when your policy is a YAML file on disk; callers whose policy lives in a database, a service config, an API payload, or a YAML shape of their own had no supported way to compile one axis spec, and the only compilers were private underscore symbols free to change without notice. Both dataclasses were already public, so hand-construction was always possible — and that is the trap this closes: building an `AxisPredicate` directly **skips every check the loader applies** (a non-empty `values`, an integer `negate_within >= 0`, cues present whenever `negate_within > 0`), so the identical spec could compile two ways and match differently depending on which path produced it. `AxisPredicate(values=())` is constructible and can never fire; the compiler refuses it. No behaviour change to any existing path: the functions are the ones `load_policy` has always used, exported under stable names, and the previous private names remain as aliases so existing imports keep working. New suite `tests/test_policy_public_compilers.py` pins the export, the aliases, and that the direct and loader paths agree on one spec.
+- **Public floor-rule compilers: `fivedrisk.parse_axis_predicate` and `fivedrisk.parse_value_match`**, plus `FieldValuePredicate` on the package root. `load_policy` compiles the `floor:` block for you when your policy is a YAML file on disk; callers whose policy lives in a database, a service config, an API payload, or a YAML shape of their own had no supported way to compile one axis spec, and the only compilers were private underscore symbols free to change without notice. Both dataclasses were already public, so hand-construction was always possible — and that is the trap this closes: building an `AxisPredicate` directly **skips compiler checks**. The loader now also rejects unsafe regexes and token-window suppression on RED/ORANGE hard floors; a directly constructed hard floor fails closed at match time. The previous private compiler names remain as aliases so existing imports keep working. New suite `tests/test_policy_public_compilers.py` pins the export, aliases, and soft-floor compiler equivalence.
 
 ### Added — documentation the code had shipped without
 
@@ -167,7 +280,7 @@ Both are warnings rather than errors, so no policy that validated before fails n
 - **Claude Code structured hook** (`fivedrisk.claude_code`, CLI `fivedrisk claude-hook`) — PreToolUse gate that maps ORANGE to Claude Code's native `ask` (human approval) instead of a hard deny, plus a PostToolUse verify-close that normalizes the tool-output field so egress leaks are actually scanned.
 - **TypeScript gateway client** (`clients/typescript`, npm `fivedrisk-gateway`) — gate any JS/TS agent through the engine over the JSON-lines gateway, with guards for **Vercel AI SDK** (`guardVercelTool`) and **Genkit** (`guardGenkitTool`). Fails closed on every transport failure.
 - **Setup skill** (`fivedrisk-setup`) — install → detect your framework → wire the adapter → verify → run an example, plus a field-engineering reference.
-- **Red-line floor matcher axes** (`fivedrisk.policy`) — `value_match` (`FieldValuePredicate`) binds a predicate to a NAMED field's VALUE (not the joined haystack of all values), and an opt-in token-window negation (`negate_within` / `negate_cues`) suppresses a pattern hit when a negation cue is within N tokens. Both fail closed: the regex axes treat an oversize (>100k) haystack as a hit rather than truncating and silently missing a token past the cap, and `value_match` scans every same-named field so a case-variant key cannot shadow a dangerous value.
+- **Red-line floor matcher axes** (`fivedrisk.policy`) — `value_match` (`FieldValuePredicate`) binds a predicate to a NAMED field's VALUE (not the joined haystack of all values), and an opt-in token-window negation (`negate_within` / `negate_cues`) can suppress a pattern hit on GREEN/YELLOW classification floors. RED/ORANGE block floors reject that suppression. Regex axes treat an oversize (>100k) haystack as a hit rather than truncating and silently missing a token past the cap, while hard floors also reject mechanically unsafe regex constructs because input length alone cannot bound backtracking time. `value_match` scans every same-named field so a case-variant key cannot shadow a dangerous value.
 - **Decision memory** (opt-in, `fivedrisk.logger`) — a store for decisions you explicitly choose to keep. Storage-only and inert by default: it has no engine consumer, so a remembered decision can never override or demote a fresh score.
 
 ### Fixed

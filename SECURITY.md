@@ -7,15 +7,25 @@ is worth reporting bugs in, so this file says how.
 
 | Version | Supported |
 |---|---|
-| 0.7.x | Yes |
-| 0.6.x and earlier | No. See the advisory below. |
+| 0.7.1 and later 0.7.x | Yes |
+| 0.7.0 | No. Its floor engine contains the four fixes below, but `@gate`, the setup workflow, and the bundled Claude/TypeScript integrations have provenance, receiver/argv trust, score/execute-identity, proxy-execution, package-content, and response-validation defects fixed in 0.7.1. |
+| 0.6.x and earlier | No. See the floor advisory below. |
 
 Fixes land on the latest minor version. There is no backport branch.
 
+The 0.7.1 integration hardening also isolates the outer Claude launcher before
+standard-library imports, rejects malformed tool-name/autonomy/session fields instead
+of coercing or clamping them, keeps the long-lived gateway alive after a bad frame, and
+ships a runtime-only Python wheel. Independent public install workflows perform an
+isolated metadata/spec provenance check before executing package code, so a checkout or
+hostile working-directory package cannot satisfy the documented installation proof. See
+the 0.7.1 entry in [CHANGELOG.md](CHANGELOG.md).
+
 ### Advisory affecting 0.6.0 and earlier
 
-**0.6.0 and every earlier release carry two floor fail-opens.** Both are fixed in 0.7.0 and
-both are described in full at the top of [CHANGELOG.md](CHANGELOG.md).
+**0.6.0 and every earlier release carry two unconditional floor fail-opens.** The 0.7.0
+candidate also closes two operator-configurable hard-floor defects. All four are described
+in full at the top of [CHANGELOG.md](CHANGELOG.md).
 
 * **SEC-1, the checksum axis could read across a field boundary.** Candidate extraction
   joined the whole tool input into one string, so a genuine identifier could fail to be
@@ -28,9 +38,16 @@ both are described in full at the top of [CHANGELOG.md](CHANGELOG.md).
 * **SEC-2, `first_red_line_hit` returned the first firing rule rather than the strictest.**
   A soft floor listed earlier could swallow a hard red line firing on the same action, so
   list position decided a verdict.
+* **SEC-3, catastrophic operator regexes could hang a RED/ORANGE floor.** The input-size
+  cap was not a regex execution-time bound. Stable 0.7.x rejects mechanically unsafe hard-
+  floor regexes during validation and fails closed if direct construction bypasses loading.
+* **SEC-4, token-window negation could suppress a hard-floor match across clauses or
+  sentences.** Stable 0.7.x rejects negation on RED/ORANGE block floors and evaluates a
+  directly constructed hard-floor pattern without suppression.
 
-Neither needs a configuration change to be exposed. If you use `checksum` floor axes, or a
-rule set that mixes floor bands, upgrade.
+SEC-1 and SEC-2 need no configuration change to be exposed. SEC-3 and SEC-4 apply when an
+operator authors regex or token-window-negation floor controls. In every case, install a
+supported stable release `>=0.7.1,<0.8.0` and validate the policy before enabling the gate.
 
 ## Reporting a vulnerability
 

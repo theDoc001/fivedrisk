@@ -2,7 +2,7 @@
 
 Worked examples showing how to integrate fivedrisk with common agentic
 stacks. Each example is self-contained: it runs as-is, has no external
-dependencies beyond `pip install fivedrisk[langgraph,dev]`, and can be
+dependencies beyond the `fivedrisk[langgraph,dev]` extra, and can be
 adapted to a real deployment by swapping the mocks for real services.
 
 ## Available examples
@@ -10,17 +10,14 @@ adapted to a real deployment by swapping the mocks for real services.
 - **`minimal_gate.py`** — The smallest possible fivedrisk integration. One
   decorated function, one GREEN execution, one RED block, and the resulting
   audit-log rows. No LLM, no API key, no network.
-- **`langgraph_multi_step.py`** — Markov SafetyDrift catches a compositional
-  exfiltration plan (read config, read secrets, summarize logs, call external
-  API). Each step is GREEN in isolation; the sequence escalates.
+- **`langgraph_multi_step.py`** — Per-call LangGraph gate-node and conditional
+  routing shape. It scores a benign read, destructive Bash call, and external
+  write, then shows the route each band would take. It is not a Markov sequence demo.
 - **`spiffe_mcp_passthrough.py`** — End-to-end pattern for SPIFFE workload
   identity flowing through an MCP-shaped agent into fivedrisk policy
   evaluation. Uses mocks for the SPIRE workload API and the MCP server;
   the fivedrisk integration is real. Demonstrates how an identity claim
   attaches to `Action.metadata` and flows through to the audit log.
-- **`openai_agents_sdk_hook.py`** — fivedrisk wired as a tool guardrail
-  inside an OpenAI Agents SDK-shaped runner. The runner is mocked; the
-  fivedrisk gating is real.
 
 ## Planned
 
@@ -29,13 +26,20 @@ adapted to a real deployment by swapping the mocks for real services.
   Backlog item `OSS-MCP-SPIFFE-REFERENCE-001`. Requires Docker on the host.
 - **Claude Agent SDK hook integration** — Drop-in `fivedrisk_pre_tool` and
   `fivedrisk_post_tool` hooks wired into a working Agent SDK call.
+- **OpenAI Agents SDK worked example** — The supported adapter wiring is in the
+  [`fivedrisk-setup` adapter reference](../fivedrisk-plugin/skills/fivedrisk-setup/references/adapters.md#openai-agents-sdk);
+  a validated runnable example is not yet shipped here.
 
 ## How to run
 
+From the root of a public source checkout, select one Python interpreter. If
+you use a virtual environment, create it outside the checkout and set
+`PYTHON_BIN` to that environment's Python executable.
+
 ```bash
-cd "/path/to/fivedrisk-oss/dev"
-source .venv/bin/activate
-python examples/spiffe_mcp_passthrough.py
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+"$PYTHON_BIN" -m pip install ".[langgraph,dev]"
+"$PYTHON_BIN" examples/spiffe_mcp_passthrough.py
 ```
 
 Each example prints what it does, what fivedrisk decided, and what the

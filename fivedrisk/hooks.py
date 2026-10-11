@@ -21,7 +21,7 @@ Usage with Agent SDK:
     ):
         print(msg)
 
-Usage for builder.py / arbitrary functions:
+Usage for arbitrary functions:
     from fivedrisk.hooks import scan_input_for_injection, scan_output_for_leakage, gate
 
     # Scan LLM input
@@ -42,9 +42,9 @@ Usage for builder.py / arbitrary functions:
 
 from __future__ import annotations
 
-import asyncio
 import functools
 import inspect
+import math
 import re
 import threading
 import uuid
@@ -144,6 +144,14 @@ class BandBlockError(FivedriskDenial):
     (JSON parsing, input validation) would swallow a RED/ORANGE block and the
     action would proceed as if allowed — a fail-open. Catch `FivedriskDenial`
     (or `BandBlockError`) explicitly to handle a block."""
+
+
+class GateInputError(FivedriskDenial):
+    """Raised when @gate cannot detach caller action data safely.
+
+    Security-sensitive action data is restricted to exact built-in data types.
+    Custom conversion and iteration hooks are never invoked to prepare a call.
+    """
 
 
 class SessionRequiredError(FivedriskDenial):
@@ -495,14 +503,14 @@ def scan_input_for_injection(text: str, source: str = "unknown") -> Optional[str
     Returns None if clean, or a string describing the match if suspicious.
 
     Sources to always scan:
-    - User messages from untrusted channels (Discord, email, web forms)
+    - User messages from untrusted channels (chat, email, web forms)
     - Content retrieved from web pages (WebFetch results)
     - Content read from external files
-    - Any text that came from outside the vault
+    - Any text that came from outside the trusted data boundary
 
     Sources that are generally safe (but can still be scanned):
-    - Vault-internal content written by Dot
-    - Hardcoded system prompts from DB (DECISION-005)
+    - Operator-authored content in a trusted local store
+    - Versioned system prompts loaded from trusted configuration
     """
     for pattern, label in INJECTION_PATTERNS:
         if re.search(pattern, text):
@@ -565,6 +573,133 @@ def scan_semantic_review(
 
 # ─── @gate decorator ───────────────────────────────────────────
 
+def _snapshot_gate_value(
+    value: Any,
+    memo: Dict[int, Any],
+    active: set[int],
+) -> Any:
+    """Detach exact built-in action data without invoking conversion hooks."""
+    value_type = type(value)
+    if value is None or value_type in {bool, int, str}:
+        return value
+    if value_type is float:
+        if not math.isfinite(value):
+            raise GateInputError("@gate action data contains a non-finite float")
+        return value
+    if value_type not in {list, tuple, dict}:
+        raise GateInputError(
+            "@gate action data uses an unsupported custom type; convert it to "
+            "exact built-in data before calling"
+        )
+
+    identity = id(value)
+    if identity in active:
+        raise GateInputError("@gate action data contains a cycle")
+    if identity in memo:
+        return memo[identity]
+    active.add(identity)
+    try:
+        if value_type is list:
+            detached: list[Any] = []
+            memo[identity] = detached
+            detached.extend(_snapshot_gate_value(item, memo, active) for item in value)
+            return detached
+        if value_type is tuple:
+            detached_tuple = tuple(
+                _snapshot_gate_value(item, memo, active) for item in value
+            )
+            memo[identity] = detached_tuple
+            return detached_tuple
+
+        detached_dict: Dict[str, Any] = {}
+        memo[identity] = detached_dict
+        for key, item in value.items():
+            if type(key) is not str:
+                raise GateInputError("@gate action-data dict keys must be exact strings")
+            detached_dict[key] = _snapshot_gate_value(item, memo, active)
+        return detached_dict
+    finally:
+        active.remove(identity)
+
+
+def _snapshot_gate_call(
+    fn: Callable,
+    args: tuple[Any, ...],
+    kwargs: Dict[str, Any],
+) -> tuple[tuple[Any, ...], Dict[str, Any]]:
+    """Return detached execution arguments containing exact built-in data only."""
+    memo: Dict[int, Any] = {}
+    active: set[int] = set()
+    detached_args = [
+        _snapshot_gate_value(value, memo, active)
+        for value in args
+    ]
+    detached_kwargs: Dict[str, Any] = {}
+    for key, value in kwargs.items():
+        if type(key) is not str:
+            raise GateInputError("@gate keyword names must be exact strings")
+        detached_kwargs[key] = _snapshot_gate_value(value, memo, active)
+    return tuple(detached_args), detached_kwargs
+
+
+def _validate_gate_tool_contract(
+    fn: Callable,
+    args: tuple[Any, ...],
+    kwargs: Dict[str, Any],
+    tool_name: str,
+) -> None:
+    """Enforce tool-specific score/execute shape invariants before scoring."""
+    if tool_name != "Bash":
+        return
+    try:
+        signature = inspect.signature(fn)
+        bound = signature.bind(*args, **kwargs)
+    except (TypeError, ValueError):
+        return
+    if any(
+        parameter.kind is inspect.Parameter.VAR_POSITIONAL
+        for parameter in signature.parameters.values()
+    ):
+        raise GateInputError("@gate Bash does not support variadic positional arguments")
+    command = bound.arguments.get("command")
+    if type(command) is not str:
+        raise GateInputError("@gate Bash command must be one exact built-in string")
+
+def _build_gate_tool_input(
+    fn: Callable,
+    args: tuple[Any, ...],
+    kwargs: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build policy input without losing names from positional arguments.
+
+    ``_args`` is retained for compatibility with existing policies and audit
+    fingerprints.  Signature binding adds the names the wrapped function will
+    use, so positional and keyword calls reach the same policy fields.  Invalid
+    calls keep the legacy representation and are left for Python to reject with
+    the wrapped callable's native ``TypeError``.
+    """
+    tool_input: Dict[str, Any] = {}
+    if args:
+        tool_input["_args"] = str(args)
+    if kwargs:
+        tool_input.update({key: str(value) for key, value in kwargs.items()})
+
+    try:
+        signature = inspect.signature(fn)
+        bound = signature.bind(*args, **kwargs)
+    except TypeError:
+        return tool_input
+
+    for name, value in bound.arguments.items():
+        parameter = signature.parameters[name]
+        if parameter.kind is inspect.Parameter.VAR_KEYWORD and isinstance(value, dict):
+            for key, item in value.items():
+                if key != "_args":
+                    tool_input[key] = str(item)
+        elif name != "_args":
+            tool_input[name] = str(value)
+    return tool_input
+
 def gate(
     tool_name: str,
     autonomy_context: int = 0,
@@ -598,7 +733,7 @@ def gate(
         def write_to_vault(path: str, content: str) -> None:
             Path(path).write_text(content)
 
-        @gate(tool_name="send_discord_message", autonomy_context=0,
+        @gate(tool_name="send_message", autonomy_context=0,
               on_block=lambda r: logger.warning("blocked", reason=r))
         def send_message(channel_id, text):
             ...
@@ -631,12 +766,18 @@ def gate(
                 else _default_estimated_input_tokens,
             )
 
-            # Build tool_input from args/kwargs for classifier
-            tool_input: Dict[str, Any] = {}
-            if args:
-                tool_input["_args"] = str(args)
-            if kwargs:
-                tool_input.update({k: str(v) for k, v in kwargs.items()})
+            try:
+                snapshot_args, snapshot_kwargs = _snapshot_gate_call(fn, args, kwargs)
+                _validate_gate_tool_contract(
+                    fn, snapshot_args, snapshot_kwargs, tool_name
+                )
+            except GateInputError as exc:
+                if on_block:
+                    return on_block(str(exc))
+                raise
+
+            # Build policy input after removing internal per-call overrides.
+            tool_input = _build_gate_tool_input(fn, snapshot_args, snapshot_kwargs)
 
             action = classify_tool_call(
                 tool_name=tool_name,
@@ -648,7 +789,7 @@ def gate(
             if call_acting_identity is not None:
                 action.acting_identity = call_acting_identity
 
-            session_id = _resolve_gate_session_id(args, kwargs)
+            session_id = _resolve_gate_session_id(fn, snapshot_args, snapshot_kwargs)
             if _require_session_id and session_id is None:
                 reason = _session_required_message()
                 if on_block:
@@ -763,7 +904,7 @@ def gate(
                 raise BandBlockError(reason)
 
             try:
-                return fn(*args, **kwargs)
+                return fn(*snapshot_args, **snapshot_kwargs)
             finally:
                 # Commit at worst-case (conservative; actual token count
                 # is unknown to OSS @gate). Replace with measured count
@@ -791,11 +932,16 @@ def gate(
                 if _decorator_input_tokens is not None
                 else _default_estimated_input_tokens,
             )
-            tool_input: Dict[str, Any] = {}
-            if args:
-                tool_input["_args"] = str(args)
-            if kwargs:
-                tool_input.update({k: str(v) for k, v in kwargs.items()})
+            try:
+                snapshot_args, snapshot_kwargs = _snapshot_gate_call(fn, args, kwargs)
+                _validate_gate_tool_contract(
+                    fn, snapshot_args, snapshot_kwargs, tool_name
+                )
+            except GateInputError as exc:
+                if on_block:
+                    return (await on_block(str(exc))) if inspect.iscoroutinefunction(on_block) else on_block(str(exc))
+                raise
+            tool_input = _build_gate_tool_input(fn, snapshot_args, snapshot_kwargs)
 
             action = classify_tool_call(
                 tool_name=tool_name,
@@ -807,7 +953,7 @@ def gate(
             if call_acting_identity is not None:
                 action.acting_identity = call_acting_identity
 
-            session_id = _resolve_gate_session_id(args, kwargs)
+            session_id = _resolve_gate_session_id(fn, snapshot_args, snapshot_kwargs)
             if _require_session_id and session_id is None:
                 reason = _session_required_message()
                 if on_block:
@@ -906,7 +1052,7 @@ def gate(
                 if session_id and session_id in _budget_accumulators:
                     _budget_accumulators[session_id].cancel_reservation(tool_call_id)
                 if on_block:
-                    return (await on_block(reason)) if asyncio.iscoroutinefunction(on_block) else on_block(reason)
+                    return (await on_block(reason)) if inspect.iscoroutinefunction(on_block) else on_block(reason)
                 raise BandBlockError(reason)
 
             if result.band == Band.ORANGE:
@@ -914,13 +1060,13 @@ def gate(
                 if session_id and session_id in _budget_accumulators:
                     _budget_accumulators[session_id].cancel_reservation(tool_call_id)
                 if on_block:
-                    return (await on_block(reason)) if asyncio.iscoroutinefunction(on_block) else on_block(reason)
+                    return (await on_block(reason)) if inspect.iscoroutinefunction(on_block) else on_block(reason)
                 raise BandBlockError(reason)
 
             try:
                 if inspect.iscoroutinefunction(fn):
-                    return await fn(*args, **kwargs)
-                return fn(*args, **kwargs)
+                    return await fn(*snapshot_args, **snapshot_kwargs)
+                return fn(*snapshot_args, **snapshot_kwargs)
             finally:
                 if session_id and session_id in _budget_accumulators:
                     _budget_accumulators[session_id].commit_reservation(
@@ -974,18 +1120,19 @@ def _resolve_session_id(
 
 
 def _resolve_gate_session_id(
+    fn: Callable,
     args: tuple[Any, ...],
     kwargs: Dict[str, Any],
 ) -> Optional[str]:
-    """Resolve an optional session identifier for `@gate` calls."""
-    session_id = kwargs.get("session_id")
-    if isinstance(session_id, str) and session_id:
-        return session_id
-
-    if args:
-        candidate = getattr(args[0], "session_id", None)
-        if isinstance(candidate, str) and candidate:
-            return candidate
+    """Resolve a session identifier only from detached bound action data."""
+    try:
+        bound = inspect.signature(fn).bind_partial(*args, **kwargs)
+    except (TypeError, ValueError):
+        bound = None
+    if bound is not None:
+        session_id = bound.arguments.get("session_id")
+        if type(session_id) is str and session_id:
+            return session_id
 
     if _require_session_id:
         return None

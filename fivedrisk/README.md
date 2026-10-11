@@ -42,8 +42,9 @@ A general LLM guardrail suite. A semantic content scanner. A replacement for one
 ### Quickstart in 5 minutes
 
 ```bash
-pip install fivedrisk
-python -c "import fivedrisk; print(fivedrisk.__version__)"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 ```
 
 Full walkthrough including scope-narrowing guidance and per-deployment tuning: [`docs/quickstart.md`](../docs/quickstart.md). Copy-paste-runnable integrations: [`examples/`](../examples/). Policy presets for common deployment archetypes: [`fivedrisk/policies/presets/`](policies/presets/).
@@ -57,6 +58,14 @@ async def write_record(table: str, data: dict) -> None:
          # ORANGE → human approval required
          # RED    → blocked, never runs
 ```
+
+The decorator executes the exact detached built-in data snapshot it scores.
+Supported action values are exact `None`, `bool`, `int`, finite `float`, `str`,
+`list`, `tuple`, and string-keyed `dict`; custom objects and subclasses fail
+closed with `GateInputError` before the wrapped callable runs. Instance and class
+methods are unsupported because their receivers are custom objects; gate a static
+or free data-only boundary function instead. A `Bash` gate accepts only one exact
+built-in string in its `command` parameter, never an argv list or tuple.
 
 ---
 
@@ -99,20 +108,23 @@ fivedrisk is one layer in a defence-in-depth AI governance stack.
 - **Destination policy** — allowlist/denylist for outbound endpoints
 - **Audit log** — append-only SQLite decision log plus optional NDJSON event stream for SIEM delivery
 - **Policy floor enforcement** — floor rules in `policy.yaml` cannot be overridden at runtime
-- **Defence-in-depth test suite** — pytest markers per OWASP LLM Top 10 category, plus 39-scenario attack-class benchmark (`python -m fivedrisk benchmark`)
-- **418 tests** with 0 failures
+- **Defence-in-depth test suite** — pytest markers per OWASP LLM Top 10 category, plus a 39-scenario attack-class benchmark (`"$PYTHON_BIN" -I -m fivedrisk._bootstrap benchmark`)
+- **Regression suite** — the guarded current count is maintained in the repository-root README
 
 ---
 
 ## Install
 
 ```bash
-pip install fivedrisk
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 ```
 
 For LangGraph integration:
 ```bash
-pip install "fivedrisk[langgraph]"
+"$PYTHON_BIN" -m pip install "fivedrisk[langgraph]>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 ```
 
 ---
@@ -126,9 +138,9 @@ policy = load_policy("policy.yaml")  # or use defaults
 action = classify_tool_call("Bash", {"command": "rm -rf /tmp/cache"}, policy)
 result = score(action, policy)
 
-print(result.band)                      # Band.ORANGE
-print(result.rationale)  # "ORANGE — Bash: Reversibility=3 (≥ ORANGE threshold 3)"
-print(result.routing)    # RoutingDecision(model_floor=M3, approval_required=True)
+print(result.band)       # Band.RED
+print(result.rationale)  # "RED — Bash: Tool Privilege=4 ...; Reversibility=4 ..."
+print(result.routing)    # RoutingDecision(model_floor=M4, approval_required=True, ...)
 ```
 
 **With the `@gate` decorator:**
@@ -182,15 +194,18 @@ if bump:
 thresholds:
   red_threshold: 4
   orange_threshold: 3
+
+bands:
   orange_score: 1.8
   yellow_score: 1.0
+  red_score: 2.5
 
-[floor]
 # These rules block regardless of per-action score
-- tool_name: "Bash"
-  command_contains: "DROP TABLE"
+floor:
+- id: sar-filing-approval
+  tool_name: "file_sar"
   band: RED
-  reason: "floor:no-destructive-sql"
+  reason: "floor:sar-filing-needs-approval"
 ```
 
 ---
@@ -198,10 +213,10 @@ thresholds:
 ## Benchmark
 
 ```bash
-python -m fivedrisk benchmark
-python -m fivedrisk benchmark --format json --include-results
-python -m fivedrisk validate policy.yaml
-python benchmarks/bench_aiid_patterns.py
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap benchmark
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap --format json benchmark --include-results
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap validate policy.yaml
+"$PYTHON_BIN" benchmarks/bench_aiid_patterns.py
 ```
 
 Runs 39 offline expectation checks across: prompt injection (14 scenarios), egress/output leakage (12 scenarios), runtime policy (10 scenarios), and retrieved-content fixtures (3 scenarios). No external API calls. Deterministic. Safe to run in CI.
@@ -314,8 +329,8 @@ Additional Operational FinOps capabilities (Tool Manifest admission layers, usef
 Non-Python hosts (Node, Go, Rust, the OpenClaw plugin) call the engine over JSON-lines via `fivedrisk.gateway`:
 
 ```bash
-python -m fivedrisk.gateway stdio --policy policy.yaml   # long-lived, one JSON request/decision per line
-python -m fivedrisk.gateway score --policy policy.yaml   # one-shot
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap gateway stdio --policy policy.yaml   # long-lived, one JSON request/decision per line
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap gateway score --policy policy.yaml   # one-shot
 ```
 
 **The gateway has governance parity with the SDK hooks.** It classifies, scores, bands, logs, and also reuses the input layers: prompt-injection scanning and policy-driven semantic review run before scoring (a hit blocks with `band: "RED"`), and Markov session-drift is applied after scoring (drift accumulates across calls on a `stdio` connection). The one layer that stays SDK/configure-side is the destination allow/deny policy — it's driven by `configure()` arguments, not the policy file the gateway loads.
@@ -362,7 +377,7 @@ fivedrisk/
 ├── logger.py        # DecisionLog (SQLite, append-only)
 ├── langgraph_node.py# LangGraph integration
 ├── benchmarks.py    # 39-case offline benchmark harness
-└── tests/           # 418 tests
+└── tests/           # guarded current count in the repository-root README
 ```
 
 **Coverage**: 14/21 governance spec sections fully implemented.
