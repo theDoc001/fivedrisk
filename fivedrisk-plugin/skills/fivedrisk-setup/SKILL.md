@@ -174,7 +174,7 @@ Then select a policy from the installed package. Inspect a preset before copying
 an operator-owned path; never edit the packaged preset in place.
 
 ```bash
-"$PYTHON_BIN" -c "import fivedrisk, os; d=os.path.join(os.path.dirname(fivedrisk.__file__),'policies','presets'); print('\n'.join(sorted(os.listdir(d))))"
+"$PYTHON_BIN" -I -c "import importlib.metadata as m, os; d=m.distribution('fivedrisk').locate_file('fivedrisk/policies/presets'); print('\n'.join(sorted(os.listdir(d))))"
 ```
 
 Use the shipped defaults when no preset clearly matches. For a custom policy, compile

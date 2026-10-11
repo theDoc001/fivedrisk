@@ -48,6 +48,28 @@ Ask compact follow-ups only where the starting input leaves gaps:
 Use the five dimensions as structured questions, not as values to guess. Values remain
 `null` with `basis: unresolved` until supported and confirmed.
 
+### 5D scoring scale
+
+Every dimension is an integer from 0 through 4, and a higher value always means more
+risk. Use the endpoint anchors below. Values 1, 2, and 3 are progressively riskier
+steps between those endpoints; choose them only when the deployment facts and the
+installed policy's tool baseline support the choice. When facts span more than one
+level, use the highest plausible level until the operator resolves the uncertainty. If
+the evidence is insufficient, keep the value `null` and mark it `unresolved` instead of
+guessing.
+
+| Dimension | 0 anchor | 4 anchor |
+|---|---|---|
+| `data_sensitivity` | public data | credentials, secrets, or equivalent key material |
+| `tool_privilege` | read-only | destructive or administrator-level capability |
+| `reversibility` | trivially undoable | irreversible |
+| `external_impact` | local-only | untrusted external endpoint or equivalent uncontrolled reach |
+| `autonomy_context` | direct user instruction for this action | fully autonomous with no human in the loop |
+
+These values describe the proposed deployment profile. The verified runtime still owns
+classification, policy floors, weighting, and band calculation; do not promise a band
+from a profile number alone.
+
 ## Confirmation and compilation
 
 Present the completed profile to the operator and identify every inferred, unresolved,

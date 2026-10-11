@@ -101,6 +101,7 @@ def _minimal_plugin_repo(tmp_path: Path) -> tuple[Path, Path]:
     executable = source / "scripts" / "run"
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     executable.chmod(0o755)
+    (repo / "LICENSE").write_text("test license\n", encoding="utf-8")
     _git(repo, "init", "-q")
     _git(repo, "config", "user.name", "archive test")
     _git(repo, "config", "user.email", "archive@example.invalid")
@@ -142,6 +143,7 @@ def _distribution_repo(tmp_path: Path) -> tuple[Path, Path, str]:
         ROOT / "fivedrisk-plugin", source,
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store"),
     )
+    shutil.copy2(ROOT / "LICENSE", repo / "LICENSE")
     _git(repo, "init", "-q")
     _git(repo, "config", "user.name", "archive test")
     _git(repo, "config", "user.email", "archive@example.invalid")
@@ -184,13 +186,15 @@ def test_public_and_manual_variants_share_one_immutable_reproducible_source(tmp_
             assert f"fivedrisk-plugin/{path}" not in public_names
         assert {
             "fivedrisk-plugin/plugin.json", "fivedrisk-plugin/.codex-plugin/plugin.json",
-            "fivedrisk-plugin/README.md", "fivedrisk-plugin/assets/icon.svg",
+            "fivedrisk-plugin/LICENSE", "fivedrisk-plugin/README.md",
+            "fivedrisk-plugin/assets/icon.svg",
             "fivedrisk-plugin/skills/fivedrisk-setup/SKILL.md",
             "fivedrisk-plugin/skills/fivedrisk-setup/scripts/verify-install.sh",
             "fivedrisk-plugin/skills/fivedrisk-setup/scripts/detect_framework.py",
             "fivedrisk-plugin/skills/fivedrisk-setup/scripts/example_gate.py",
             "fivedrisk-plugin/skills/fivedrisk-setup/references/examples/goals-description-profile.yaml",
         } <= public_names
+        assert b"Apache License" in public.read("fivedrisk-plugin/LICENSE")
         for name in public_names:
             assert not ({"hooks", ".claude-plugin", "manual"} & set(Path(name).parts))
             if name.endswith((".md", ".py", ".json")):

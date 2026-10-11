@@ -23,7 +23,7 @@ ONBOARDING_SKILL = "./skills/fivedrisk-setup/SKILL.md"
 # Explicitly reviewed public surfaces. New helpers/references require deliberate
 # inclusion; a future lifecycle file must not silently enter the directory ZIP.
 PUBLIC_FILES = frozenset({
-    "README.md", "plugin.json", ".codex-plugin/plugin.json",
+    "LICENSE", "README.md", "plugin.json", ".codex-plugin/plugin.json",
     "skills/fivedrisk-setup/SKILL.md",
     "skills/fivedrisk-setup/scripts/detect_framework.py",
     "skills/fivedrisk-setup/scripts/example_gate.py",
@@ -209,6 +209,13 @@ def build(source: Path, destination: Path, epoch: int, *, variant: str = "manual
         )
         mode = 0o755 if stat.S_IMODE(path.stat().st_mode) & 0o111 else 0o644
         entries.append((relative, path.read_bytes(), mode))
+    repository_license = source.parent / "LICENSE"
+    if not (source / "LICENSE").exists() and repository_license.is_file():
+        if repository_license.is_symlink():
+            raise RuntimeError("plugin archive refuses a symlinked repository license")
+        entries.append(
+            (PurePosixPath(source.name) / "LICENSE", repository_license.read_bytes(), 0o644)
+        )
     _write_zip(_variant_entries(entries, source.name, variant), destination, epoch)
 
 
@@ -351,6 +358,11 @@ def build_from_git(source: Path, destination: Path, ref: str, *, variant: str = 
     )
     assert isinstance(payload, bytes)
     entries = _tar_entries(payload, relative, modes)
+    license_path = PurePosixPath(source.name) / "LICENSE"
+    if license_path not in {entry[0] for entry in entries}:
+        license_payload = _git(root, "show", f"{commit}:LICENSE", binary=True)
+        assert isinstance(license_payload, bytes)
+        entries.append((license_path, license_payload, 0o644))
     names = {entry[0].as_posix() for entry in entries}
     required = {
         f"{source.name}/plugin.json",

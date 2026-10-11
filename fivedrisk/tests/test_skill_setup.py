@@ -199,6 +199,49 @@ def test_consultant_intake_accepts_either_source_and_treats_prompt_as_untrusted(
     assert "Never turn an inference into policy before confirmation" in text
 
 
+def test_consultant_intake_defines_the_complete_dimension_scale():
+    intake = DEPLOYMENT_INTAKE.read_text(encoding="utf-8")
+    assert "integer from 0 through 4" in intake
+    assert "higher value always means more" in intake
+    assert "Values 1, 2, and 3" in intake
+    assert "keep the value `null`" in intake
+    for dimension in (
+        "data_sensitivity", "tool_privilege", "reversibility",
+        "external_impact", "autonomy_context",
+    ):
+        assert f"`{dimension}`" in intake
+
+
+def test_preset_discovery_is_isolated_and_does_not_import_package_code():
+    text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    preset_line = next(line for line in text.splitlines() if "policies/presets" in line)
+    assert '"$PYTHON_BIN" -I -c' in preset_line
+    assert "importlib.metadata" in preset_line
+    assert "import fivedrisk" not in preset_line
+
+
+def test_isolated_preset_discovery_ignores_a_cwd_shadow_package(tmp_path):
+    shadow = tmp_path / "fivedrisk"
+    shadow.mkdir()
+    marker = tmp_path / "shadow-executed"
+    (shadow / "__init__.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('unsafe')\n",
+        encoding="utf-8",
+    )
+    command = (
+        "import importlib.metadata as m, os; "
+        "d=m.distribution('fivedrisk').locate_file('fivedrisk/policies/presets'); "
+        "print('\\n'.join(sorted(os.listdir(d))))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", command],
+        cwd=tmp_path, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "read_only.yaml" in result.stdout
+    assert not marker.exists()
+
+
 @pytest.mark.parametrize("source_kind", ["redacted_system_prompt", "goals_description"])
 def test_deployment_profile_template_is_schema_complete_for_both_sources(source_kind):
     profile = yaml.safe_load(PROFILE_TEMPLATE.read_text(encoding="utf-8"))

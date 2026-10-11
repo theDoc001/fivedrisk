@@ -28,6 +28,11 @@ tools: *unresolved_collection
 #   dimensions: {data_sensitivity: *unresolved_fact, tool_privilege: *unresolved_fact,
 #     reversibility: *unresolved_fact, external_impact: *unresolved_fact,
 #     autonomy_context: *unresolved_fact}
+# Dimension values are integers 0..4, with higher always meaning more risk. Endpoint
+# anchors: public->credentials/secrets; read-only->destructive/admin;
+# trivially-undoable->irreversible; local-only->untrusted-external; direct-user-action
+# ->fully-autonomous/no-human. Keep uncertain values null/unresolved; see
+# references/deployment-intake.md for the full scoring rule.
 
 acceptance_cases:
   allowed: *unresolved_collection
