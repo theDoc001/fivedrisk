@@ -83,8 +83,8 @@ jobs:
           cd "$EVIDENCE/neutral"
           "$BASE_VENV/bin/python" -I -c 'import importlib.metadata as m, json, pathlib, sys, fivedrisk; p=pathlib.Path(fivedrisk.__file__).resolve(); root=pathlib.Path(sys.prefix).resolve(); assert p.is_relative_to(root), (p, root); print(json.dumps({"distribution": m.version("fivedrisk"), "module": str(p), "prefix": str(root)}, sort_keys=True))' | tee "$EVIDENCE/base-import.json"
           "$CANDIDATE_VENV/bin/python" -I -c 'import importlib.metadata as m, json, pathlib, sys, fivedrisk; p=pathlib.Path(fivedrisk.__file__).resolve(); root=pathlib.Path(sys.prefix).resolve(); assert p.is_relative_to(root), (p, root); print(json.dumps({"distribution": m.version("fivedrisk"), "module": str(p), "prefix": str(root)}, sort_keys=True))' | tee "$EVIDENCE/candidate-import.json"
-          "$BASE_VENV/bin/python" -m pip freeze --all | grep -v '^fivedrisk==' | LC_ALL=C sort > "$EVIDENCE/base-dependencies.txt"
-          "$CANDIDATE_VENV/bin/python" -m pip freeze --all | grep -v '^fivedrisk==' | LC_ALL=C sort > "$EVIDENCE/candidate-dependencies.txt"
+          "$BASE_VENV/bin/python" -m pip freeze --all | grep -Eiv '^fivedrisk(==|[[:space:]]+@)' | LC_ALL=C sort > "$EVIDENCE/base-dependencies.txt"
+          "$CANDIDATE_VENV/bin/python" -m pip freeze --all | grep -Eiv '^fivedrisk(==|[[:space:]]+@)' | LC_ALL=C sort > "$EVIDENCE/candidate-dependencies.txt"
           diff -u "$EVIDENCE/base-dependencies.txt" "$EVIDENCE/candidate-dependencies.txt" | tee "$EVIDENCE/dependency-diff.txt"
 
       - name: Run balanced paired benchmark

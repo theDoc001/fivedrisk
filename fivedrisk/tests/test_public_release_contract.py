@@ -434,6 +434,7 @@ def test_benchmark_workflow_pairs_frozen_base_and_candidate():
     assert 'git -C "$CANDIDATE_TREE" rev-parse HEAD' in bench
     assert "pip install -e" not in bench
     assert "pip freeze --all" in bench
+    assert "grep -Eiv '^fivedrisk(==|[[:space:]]+@)'" in bench
     assert "diff -u" in bench
     assert "--runs 3 --json" in bench
     order = [
