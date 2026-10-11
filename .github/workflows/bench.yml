@@ -121,7 +121,7 @@ jobs:
             test "$BASE_SHA" = "c22213b513d4be167a0704244ad08c54e4ed1984"
             while IFS= read -r changed; do
               case "$changed" in
-                .github/workflows/bench.yml|README.md|benchmarks/README.md|benchmarks/bench_ci.py|benchmarks/check_regression.py|benchmarks/aggregate_paired_results.py|fivedrisk/tests/test_paired_benchmark_gate.py) ;;
+                .github/workflows/bench.yml|.github/workflows/release-gate.yml|.github/workflows/tests.yml|README.md|benchmarks/README.md|benchmarks/bench_ci.py|benchmarks/check_regression.py|benchmarks/aggregate_paired_results.py|fivedrisk/tests/test_paired_benchmark_gate.py|fivedrisk/tests/test_release_window.py|tools/release_window.py) ;;
                 *) echo "FAIL: non-infrastructure bootstrap path: $changed" >&2; exit 1 ;;
               esac
             done < "$EVIDENCE/changed-paths.txt"

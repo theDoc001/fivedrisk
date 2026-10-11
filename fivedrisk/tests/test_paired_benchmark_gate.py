@@ -275,6 +275,13 @@ def test_benchmark_workflow_uses_protected_tools_and_balanced_crossover_blocks()
     assert "persist-credentials: false" in workflow
     assert 'python-version: "3.14.6"' in workflow
     assert "bootstrap-candidate-infrastructure-only" in workflow
+    for bootstrap_path in (
+        ".github/workflows/release-gate.yml",
+        ".github/workflows/tests.yml",
+        "tools/release_window.py",
+        "fivedrisk/tests/test_release_window.py",
+    ):
+        assert bootstrap_path in workflow
 
 
 def test_benchmark_driver_documents_the_enforced_dual_threshold():
