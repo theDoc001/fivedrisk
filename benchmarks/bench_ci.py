@@ -228,15 +228,23 @@ def run_bench_median(runs: int) -> dict:
     return merged
 
 
+def _positive_run_count(value: str) -> int:
+    """Parse a strictly positive CLI repetition count."""
+    count = int(value)
+    if count < 1:
+        raise argparse.ArgumentTypeError("--runs must be a positive integer")
+    return count
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="fivedrisk CI performance benchmark")
     parser.add_argument(
         "--json", action="store_true", help="Output JSON to stdout (for CI capture)"
     )
     parser.add_argument(
-        "--runs", type=int, default=1,
+        "--runs", type=_positive_run_count, default=1,
         help="Run the full bench N times and report per-scenario median (M13: "
-             "smooths p99 noise; CI uses --runs 5). Default 1.",
+             "smooths p99 noise; CI crossover blocks use --runs 1). Default 1.",
     )
     args = parser.parse_args()
 

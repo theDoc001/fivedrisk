@@ -436,28 +436,25 @@ def test_benchmark_workflow_pairs_frozen_base_and_candidate():
     assert "pip freeze --all" in bench
     assert "grep -Eiv '^fivedrisk(==|[[:space:]]+@)'" in bench
     assert "diff -u" in bench
-    assert "--runs 3 --json" in bench
-    order = [
-        "base-a.json",
-        "candidate-a.json",
-        "candidate-b.json",
-        "base-b.json",
-    ]
-    positions = [bench.index(name) for name in order]
-    assert positions == sorted(positions)
-    assert "aggregate_results.py" in bench
+    assert "seq -w 1 12" in bench
+    assert 'design="abba"' in bench
+    assert 'subjects="base candidate candidate base"' in bench
+    assert 'subjects="candidate base base candidate"' in bench
+    assert "--runs 1 --json" in bench
+    assert "aggregate_paired_results.py" in bench
     assert "check_regression.py" in bench
     assert "actions/upload-artifact@v4" in bench
     assert 'cp "$BASE_TREE/benchmarks/bench_ci.py"' in bench
     assert 'cp "$BASE_TREE/benchmarks/check_regression.py"' in bench
+    assert 'cp "$BASE_TREE/benchmarks/aggregate_paired_results.py"' in bench
     assert 'cp "$CANDIDATE_TREE/benchmarks/check_regression.py"' not in bench
+    assert 'cp "$CANDIDATE_TREE/benchmarks/aggregate_paired_results.py"' not in bench
     assert "ast.dump" in bench
-    assert "module docstring" in bench
-    assert bench.count("--threshold 0.30 --min-abs-us 25") == 4
-    assert '"$EVIDENCE/runs/candidate-a.json" "$EVIDENCE/runs/base-a.json"' in bench
-    assert '"$EVIDENCE/runs/candidate-b.json" "$EVIDENCE/runs/base-b.json"' in bench
+    assert bench.count("--threshold 0.30 --min-abs-us 25") == 1
     assert "positive-control-current.json" in bench
     assert "unexpectedly accepted synthetic slowdown" in bench
+    assert "AGGREGATE_STATUS" in bench
+    assert 'test "$AGGREGATE_STATUS" -eq 0' in bench
 
 
 def test_benchmark_driver_documents_the_enforced_dual_threshold():

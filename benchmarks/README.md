@@ -14,9 +14,9 @@ The attack-class benchmark is an expectation-match harness. A passing run means 
 
 ## Regression detection
 
-On every PR, CI measures the frozen base and candidate commits on the same `macos-latest` runner with Python 3.14.6. Each commit is built as a wheel, installed non-editably into a separate environment, and run in balanced base/candidate/candidate/base order. The two three-run summaries per commit are aggregated into an effective six-run comparison. Any scenario where candidate p99 crosses both the **30%** relative and **25µs** absolute limits fails the workflow. Environment, dependency, workload, or scenario mismatches fail closed, and the workflow uploads the raw and aggregated evidence.
+On every PR, CI runs 12 fresh-process crossover blocks on the same `macos-latest` runner with Python 3.14.6: six ABBA and six BAAB blocks, where A is protected base and B is the candidate. Each block produces a position-balanced relative and absolute p99 effect. Protected-base tools aggregate the median effect overall and by crossover design; all three populations must stay within either the **30%** relative or **25µs** absolute limit. A disagreement between populations is inconclusive and blocks release. Environment, dependency, workload, scenario, metric, structure, or run-count mismatches fail closed, and CI uploads all raw and diagnostic evidence.
 
-`benchmarks/baselines/main.json` is retained as a historical reference; it is not the PR merge gate. Replace it only from a separately approved, provenance-recorded run of the exact protected-main commit on the declared runner. Never derive it from candidate measurements or use a baseline refresh to waive a failing paired comparison.
+`benchmarks/baselines/main.json` is retained as a historical reference; it is not the PR merge gate. Never derive a reference baseline from candidate measurements or use a baseline refresh to waive a failing paired comparison.
 
 The threshold is tunable via `python benchmarks/check_regression.py current.json baseline.json --threshold 0.15` (for stricter 15% rule, etc).
 
