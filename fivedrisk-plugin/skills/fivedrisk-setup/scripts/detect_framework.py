@@ -106,11 +106,15 @@ def main() -> int:
     for row in rows:
         print(_fmt(row))
         print()
+    shell_python = shlex.quote(sys.executable)
+    print("[•] Other languages / custom hosts")
+    print("      Generic long-lived JSON-lines gateway")
+    print(f"      {shell_python} -I -m fivedrisk._bootstrap gateway stdio --policy policy.yaml")
+    print()
     if not any_py:
         print("No Python agent framework detected. That's fine — you can still use the")
-        shell_python = shlex.quote(sys.executable)
         print(f"`@gate` decorator, the CLI (`{shell_python} -I -m fivedrisk._bootstrap score`), or the")
-        print("Node client (`npm install fivedrisk-gateway`) for Vercel/Genkit.")
+        print("Node client for Vercel/Genkit or the generic gateway above.")
     return 0
 
 
