@@ -140,9 +140,15 @@ def test_node_detector_rows_carry_the_selected_interpreter():
     for row in rows.values():
         assert sys.executable in row["wiring"]
         assert "FivedriskGateway({ command:" in row["wiring"]
+        assert row["wiring_import"].startswith("import {")
+        assert 'from "fivedrisk-gateway";' in row["wiring_import"]
+        assert "{name}" not in row["wiring"]
+    assert "guardVercelTool" in rows["Vercel AI SDK (Node)"]["wiring_import"]
+    assert "guardGenkitTool" in rows["Genkit (Node)"]["wiring_import"]
+    assert 'name: "my_tool"' in rows["Genkit (Node)"]["wiring"]
 
 
-def test_example_gate_runs_and_shows_both_bands():
+def test_example_gate_runs_and_shows_green_and_blocked_red():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(DEV)
     out = subprocess.run(

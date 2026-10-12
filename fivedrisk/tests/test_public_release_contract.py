@@ -9,6 +9,9 @@ import subprocess
 import textwrap
 from pathlib import Path
 
+from fivedrisk.policy import load_policy
+from fivedrisk.schema import Action, Band
+from fivedrisk.scorer import score
 from fivedrisk.cli import (
     _floor_control_warnings,
     _floor_unknown_key_warnings,
@@ -205,6 +208,25 @@ def test_plugin_auto_discovers_only_the_consultant_skill():
     ).lower()
     assert "composite >= 8.0" not in shipped_text
     assert "data sensitivity: 1.0" not in shipped_text
+
+
+def test_plugin_starter_policy_explicitly_uses_default_folded_yellow_behavior():
+    path = ROOT / "fivedrisk-plugin" / "policy.yaml"
+    policy = load_policy(str(path))
+    moderate = Action(
+        tool_name="TestTool",
+        data_sensitivity=0,
+        tool_privilege=1,
+        reversibility=2,
+        external_impact=2,
+        autonomy_context=2,
+    )
+
+    assert "enable_yellow_band: false" in path.read_text(encoding="utf-8")
+    assert policy.enable_yellow_band is False
+    assert score(moderate, policy).band is Band.GREEN
+    policy.enable_yellow_band = True
+    assert score(moderate, policy).band is Band.YELLOW
 
 
 def test_openai_presentation_and_onboarding_are_complete_in_both_formats():
