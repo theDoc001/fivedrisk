@@ -172,6 +172,7 @@ def test_skill_manifest_uses_supported_frontmatter_and_five_ordered_phases():
         if (match := re.match(r"^([a-z][a-z0-9_-]*):", line))
     }
     assert top_level <= {"name", "description", "license", "metadata"}
+    assert "  version: 0.7.1" in frontmatter
 
     phases = [
         "## Phase 0: Deployment consultation",
@@ -491,6 +492,18 @@ def test_skill_stops_when_distribution_installation_is_unavailable():
     assert "user approval, repository trust, or commit/ref approval history" in text
     assert "distribution-recorded entrypoint for a non-editable installation" in text
     assert 'PYTHON_BIN="$PYTHON_BIN" bash "$SKILL_ROOT/scripts/verify-install.sh"' in text
+
+
+def test_public_docs_use_the_canonical_skills_cli_install_target():
+    command = "npx skills add theDoc001/fivedrisk --skill fivedrisk-setup"
+    root_readme = (DEV / "README.md").read_text(encoding="utf-8")
+    plugin_readme = (DEV / "fivedrisk-plugin" / "README.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert root_readme.count(command) == 1
+    assert plugin_readme.count(command) == 1
+    assert "does not install the Python runtime" in plugin_readme
 
 
 @pytest.mark.parametrize(("relative", "content"), [

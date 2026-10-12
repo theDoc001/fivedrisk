@@ -8,7 +8,7 @@ description: >
   a policy, proving a gate works end to end, or diagnosing a partial setup.
 license: Apache-2.0
 metadata:
-  version: 0.7.0
+  version: 0.7.1
   homepage: https://github.com/theDoc001/fivedrisk
 ---
 
