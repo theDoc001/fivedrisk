@@ -13,15 +13,15 @@ Built in Vienna, Austria. Architecturally sovereign: no hyperscaler dependency, 
 
 ---
 
-## The two-stage gate
+## Deterministic first, optional semantic second
 
-The two stages answer different questions. fivedrisk asks whether an action is permitted: rules evaluated over the action envelope, its policy, the caller's identity and the sequence so far, with the record naming the policy that decided. A semantic scanner asks whether a span of text is malicious or sensitive, which is a judgment, and it is reserved for the YELLOW and ORANGE bands where that judgment is what the decision turns on.
+The stages answer different questions. fivedrisk asks whether an action is permitted: rules evaluated over the action envelope, its policy, the caller's identity and the sequence so far, with the record naming the policy that decided. A semantic scanner asks whether a span of text is malicious or sensitive, which is a judgment. fivedrisk does not bundle or invoke a semantic scanner. A deployment may add one for explicitly named ambiguity classes, but it may only preserve or raise the deterministic severity, never lower it. YELLOW is opt-in and its score range folds into GREEN by default; ORANGE remains approval-required.
 
-The order is the design. The deterministic stage runs first and reaches a verdict with no model call, so every action it resolves costs no inference, no round trip and no tokens, and no prompt leaves your estate. The expensive stage runs only where it changes the outcome.
+The order is the design. The deterministic stage runs first and reaches a verdict with no model call, so every action it resolves costs no inference, no round trip and no tokens, and no prompt leaves your estate. An optional semantic stage runs only for ambiguity classes the deployment explicitly routes.
 
 They run in series because the questions differ, not because one is a cheaper version of the other. A deterministic gate fails by holding a wrong rule, which you can read, test and fix. A semantic scanner fails by making a wrong call on an input nobody anticipated. Neither failure mode substitutes for the other.
 
-How much of your action volume never reaches the second stage depends on your traffic and your policy, and that fraction is what decides the saving. Measure it on yours rather than taking a number from a README.
+How much of your action volume reaches an optional second stage depends on your traffic and policy. Measure that fraction, latency, and compute on your deployment rather than taking a number from a README.
 
 ```
 agent action
@@ -30,14 +30,15 @@ agent action
 [fivedrisk]  ← 0.2 to 2.9 ms, deterministic, audited
     │
     ├── GREEN  ─────────────► execute
-    ├── YELLOW ─► LLM scanner ──► execute / log / escalate  (100–700 ms only when needed)
+    ├── YELLOW ───────────► execute / enhanced log  (opt-in band)
     ├── ORANGE ─► HITL ────────► approve / deny
     └── RED    ─────────────► block, audit, alert
 ```
 
 The arrows show the shipped default dispositions, not the definition of each band.
-A band is severity; a deployment may remap its disposition. Concrete adapters below
-state where their integration contract deliberately blocks or requests approval.
+A band is severity; a deployment may remap its disposition. Optional observer routing
+is deployment-owned and is not shown as a shipped path. Concrete adapters below state
+where their integration contract deliberately blocks or requests approval.
 
 **What it is.** A runtime action-governance layer for AI agents. Per-action 5D scoring, HITL escalation, append-only audit log, 16-state Markov SafetyDrift for compositional attacks, identity capture, and an NDJSON event stream for SIEM. Think OPA for AI agents.
 

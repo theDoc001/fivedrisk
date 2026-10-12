@@ -274,6 +274,18 @@ def test_deployment_profile_template_is_schema_complete_for_both_sources(source_
     _assert_profile_contract(profile)
 
 
+def test_deployment_profile_template_fields_do_not_share_yaml_alias_state():
+    profile = yaml.safe_load(PROFILE_TEMPLATE.read_text(encoding="utf-8"))
+
+    profile["agent"]["mission_summary"]["value"] = "changed"
+    profile["tools"]["items"].append("changed")
+
+    assert profile["agent"]["framework"]["value"] is None
+    assert profile["agent"]["execution_boundary"]["value"] is None
+    assert profile["acceptance_cases"]["allowed"]["items"] == []
+    assert profile["observer"]["routed_ambiguities"]["items"] == []
+
+
 def _assert_fact(fact):
     assert isinstance(fact, dict)
     assert set(fact) == {"value", "basis", "confirmation_status"}

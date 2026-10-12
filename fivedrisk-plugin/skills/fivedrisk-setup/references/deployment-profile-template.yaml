@@ -6,18 +6,27 @@ source:
   raw_content_stored: false
 
 agent:
-  mission_summary: &unresolved_fact
+  mission_summary:
     value: null
     basis: unresolved
     confirmation_status: unresolved
-  framework: *unresolved_fact
-  execution_boundary: *unresolved_fact
-  unresolved: &unresolved_collection
+  framework:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  execution_boundary:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  unresolved:
     items: []
     basis: unresolved
     confirmation_status: unresolved
 
-tools: *unresolved_collection
+tools:
+  items: []
+  basis: unresolved
+  confirmation_status: unresolved
 # tools.items entries carry their own basis + confirmation_status, then use this shape:
 # - basis: operator-stated
 #   confirmation_status: proposed
@@ -25,9 +34,12 @@ tools: *unresolved_collection
 #   actions: {items: [], basis: unresolved, confirmation_status: unresolved}
 #   data_classes: {items: [], basis: unresolved, confirmation_status: unresolved}
 #   destinations: {items: [], basis: unresolved, confirmation_status: unresolved}
-#   dimensions: {data_sensitivity: *unresolved_fact, tool_privilege: *unresolved_fact,
-#     reversibility: *unresolved_fact, external_impact: *unresolved_fact,
-#     autonomy_context: *unresolved_fact}
+#   dimensions:
+#     data_sensitivity: {value: null, basis: unresolved, confirmation_status: unresolved}
+#     tool_privilege: {value: null, basis: unresolved, confirmation_status: unresolved}
+#     reversibility: {value: null, basis: unresolved, confirmation_status: unresolved}
+#     external_impact: {value: null, basis: unresolved, confirmation_status: unresolved}
+#     autonomy_context: {value: null, basis: unresolved, confirmation_status: unresolved}
 # Dimension values are integers 0..4, with higher always meaning more risk. Endpoint
 # anchors: public->credentials/secrets; read-only->destructive/admin;
 # trivially-undoable->irreversible; local-only->untrusted-external; direct-user-action
@@ -35,27 +47,66 @@ tools: *unresolved_collection
 # references/deployment-intake.md for the full scoring rule.
 
 acceptance_cases:
-  allowed: *unresolved_collection
-  approval_required: *unresolved_collection
-  refused: *unresolved_collection
-  sequences: *unresolved_collection
+  allowed:
+    items: []
+    basis: unresolved
+    confirmation_status: unresolved
+  approval_required:
+    items: []
+    basis: unresolved
+    confirmation_status: unresolved
+  refused:
+    items: []
+    basis: unresolved
+    confirmation_status: unresolved
+  sequences:
+    items: []
+    basis: unresolved
+    confirmation_status: unresolved
 
 controls:
-  approval_channel: *unresolved_fact
-  audit_path: *unresolved_fact
-  session_identity: *unresolved_fact
-  retention_owner: *unresolved_fact
-  tool_spend_envelope: *unresolved_fact
-  observer_inference_budget: *unresolved_fact
+  approval_channel:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  audit_path:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  session_identity:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  retention_owner:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  tool_spend_envelope:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  observer_inference_budget:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
 
 observer:
-  mode: *unresolved_fact
-  routed_ambiguities: *unresolved_collection
+  mode:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  routed_ambiguities:
+    items: []
+    basis: unresolved
+    confirmation_status: unresolved
   unavailable_disposition:
     value: block
     basis: unresolved
     confirmation_status: proposed
-  thresholds_status: *unresolved_fact
+  thresholds_status:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
   evidence_status:
     value: design_only
     basis: operator-stated
