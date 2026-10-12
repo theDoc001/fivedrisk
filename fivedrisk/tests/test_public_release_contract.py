@@ -194,8 +194,11 @@ def test_portable_and_codex_manifests_share_identity_and_are_host_honest():
 
 def test_plugin_auto_discovers_only_the_consultant_skill():
     skills_root = ROOT / "fivedrisk-plugin" / "skills"
-    skills = sorted(path.parent.name for path in skills_root.glob("*/SKILL.md"))
-    assert skills == ["fivedrisk-setup"]
+    skill_files = sorted(skills_root.glob("*/SKILL.md"))
+    assert [path.parent.name for path in skill_files] == ["fivedrisk-setup"]
+    frontmatter = skill_files[0].read_text(encoding="utf-8").split("---", 2)[1]
+    assert "  version: 0.7.1" in frontmatter
+    assert "internal:" not in frontmatter
     shipped_text = "\n".join(
         path.read_text(encoding="utf-8")
         for path in (ROOT / "fivedrisk-plugin").rglob("*.md")

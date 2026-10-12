@@ -108,6 +108,16 @@ fivedrisk is an ingredient you drop into your agent stack, not a platform you mi
 | **OpenClaw** | TypeScript plugin over the gateway | [`5d-claw-security`](https://github.com/theDoc001/5d-claw-security) |
 | **Setup / field engineering** | Detect your framework; select, copy, and validate an operator-owned policy; verify install | [`fivedrisk-setup` skill](fivedrisk-plugin/skills/fivedrisk-setup/) |
 
+Install the advisory setup skill directly from this public repository with the
+[Skills CLI](https://www.skills.sh/docs/cli):
+
+```bash
+npx skills add theDoc001/fivedrisk --skill fivedrisk-setup
+```
+
+The skill helps design and verify a deployment. It does not install the Python
+runtime or intercept an agent's tool calls by itself.
+
 **The gateway** lets any language call the engine over JSON-lines:
 
 ```bash

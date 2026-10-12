@@ -41,6 +41,16 @@ settings. Both identify the same one auto-discovered skill: `fivedrisk-setup`.
 
 ## Start the consultation
 
+Install the advisory setup skill directly from this public repository with the
+[Skills CLI](https://www.skills.sh/docs/cli):
+
+```bash
+npx skills add theDoc001/fivedrisk --skill fivedrisk-setup
+```
+
+This installs the consultant skill. It does not install the Python runtime or
+activate a hook in the agent's execution path.
+
 After installing the advisory package in a compatible host, run its setup action or ask:
 “Use fivedrisk-setup to design a 5D risk profile for my agent.” Provide only a redacted
 prompt or goals/boundaries description—never credentials, customer data, or unnecessary
