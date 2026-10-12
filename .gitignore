@@ -66,6 +66,8 @@ docs/*
 !docs/audit-trail.md
 # Exception: public operator contract for the time-gated release path.
 !docs/release-controls.md
+# Exception: public contract for the non-Python JSON-lines gateway.
+!docs/gateway-protocol.md
 # Exception: FOUR spec docs ship, each re-included by name below. The rest of
 # docs/spec/ (private governance/schema drafts) stays private — do NOT broaden
 # this to docs/spec/** or those private drafts would be published.

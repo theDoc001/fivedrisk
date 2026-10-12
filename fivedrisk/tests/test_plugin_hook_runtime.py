@@ -31,6 +31,7 @@ def _run_hook(
         **os.environ,
         "FIVEDRISK_PYTHON": sys.executable,
         "CLAUDE_PLUGIN_ROOT": str(PLUGIN),
+        "FIVEDRISK_AUDIT_PATH": str((cwd / "fivedrisk-hook-audit.db").resolve()),
     }
     for key, value in (env_updates or {}).items():
         if value is None:
@@ -86,7 +87,9 @@ def test_hook_commands_use_only_explicit_quoted_interpreter_and_plugin_root():
         assert "python3 -m" not in command
 
 
-@pytest.mark.parametrize("missing", ["FIVEDRISK_PYTHON", "CLAUDE_PLUGIN_ROOT"])
+@pytest.mark.parametrize(
+    "missing", ["FIVEDRISK_PYTHON", "CLAUDE_PLUGIN_ROOT", "FIVEDRISK_AUDIT_PATH"]
+)
 def test_unset_required_hook_environment_blocks(tmp_path, missing):
     out = _run_hook(
         "PreToolUse", {"tool_name": "Read", "tool_input": {}}, tmp_path,
@@ -146,6 +149,7 @@ def test_pretooluse_emits_structured_green_orange_red_decisions(tmp_path, payloa
     result = json.loads(out.stdout)
     assert result["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
     assert result["hookSpecificOutput"]["permissionDecision"] == expected_decision
+    assert (tmp_path / "fivedrisk-hook-audit.db").is_file()
 
 
 @pytest.mark.parametrize(("payload", "blocked"), [

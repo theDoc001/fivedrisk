@@ -26,6 +26,20 @@ def _validated_policy_argument(mode: str) -> list[str] | None:
     return ["--policy", str(policy)]
 
 
+def _validated_log_argument() -> list[str] | None:
+    raw = os.environ.get("FIVEDRISK_AUDIT_PATH")
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute() or not path.parent.is_dir():
+        return None
+    if path.exists() and (not path.is_file() or not os.access(path, os.W_OK)):
+        return None
+    if not os.access(path.parent, os.W_OK):
+        return None
+    return ["--log-path", str(path)]
+
+
 def _canonical_output(mode: str, raw: str) -> dict | None:
     """Validate one structured Claude hook result and discard untrusted extras."""
     try:
@@ -121,8 +135,11 @@ def main(argv: list[str] | None = None) -> int:
     policy_args = _validated_policy_argument(mode)
     if policy_args is None:
         return _block("FIVEDRISK_POLICY_PATH is missing or unreadable")
+    log_args = _validated_log_argument()
+    if log_args is None:
+        return _block("FIVEDRISK_AUDIT_PATH must name a writable absolute audit file")
     cli_args = [
-        sys.executable, "-I", "-m", "fivedrisk._bootstrap", *policy_args,
+        sys.executable, "-I", "-m", "fivedrisk._bootstrap", *policy_args, *log_args,
         "--format", "json", "claude-hook", "-",
     ]
 

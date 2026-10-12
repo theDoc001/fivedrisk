@@ -1222,6 +1222,25 @@ async def fivedrisk_pre_tool(
     if _require_session_id and session_id is None:
         return {"decision": "block", "reason": _session_required_message()}
 
+    unsupported_controls = []
+    if _policy.identity_required:
+        unsupported_controls.append("identity_required")
+    if _policy.retry_budget is not None:
+        unsupported_controls.append("retry_budget")
+    if _policy.max_session_budget_tokens is not None:
+        unsupported_controls.append("max_session_budget_tokens")
+    if _policy.max_tool_call_budget_tokens is not None:
+        unsupported_controls.append("max_tool_call_budget_tokens")
+    if unsupported_controls:
+        reason = (
+            "5D SDK-hook surface cannot enforce configured admission controls: "
+            + ", ".join(unsupported_controls)
+        )
+        _effective_log().log_egress_block(
+            tool_name, reason, session_id, source="pre-tool-policy-block"
+        )
+        return {"decision": "block", "reason": reason}
+
     # L1: injection scan on tool input text before scoring
     input_text = str(tool_input)
     injection = scan_input_for_injection(input_text, source=f"tool:{tool_name}")

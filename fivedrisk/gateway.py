@@ -3,14 +3,11 @@
 Persistent stdio + one-shot subprocess modes that let non-Python plugins
 (OpenClaw, Node, Go, Rust) call the scoring engine over JSON-lines.
 
-GOVERNANCE PARITY (E2): the gateway classifies, scores, bands, logs, AND reuses
-the SDK input layers so non-Python hosts get the same governance as
-`fivedrisk_pre_tool`: prompt-injection scanning and policy-driven semantic review
-run before scoring (a hit blocks with `band: "RED", blocked: true`), and Markov
-session-drift is applied after scoring (reusing the same per-session drift store,
-so drift accumulates across calls on a `serve_stdio` connection). The ONE layer
-that stays SDK/configure-side is the destination allow/deny policy — it is driven
-by `hooks.configure()` arguments, not the policy file the gateway loads.
+The gateway classifies, scores, bands, logs, and reuses the shared input scans.
+Markov session drift is applied when a request supplies `session_id`. Identity,
+retry, and token-budget admission are outside protocol 1, so policies enabling
+them fail closed. Destination allow/deny configured through `hooks.configure()`
+is also outside this subprocess surface.
 
 Spec: openclaw-integration-spec.md §6 L-1, L-5, L-6 and §13.
 

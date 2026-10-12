@@ -96,6 +96,62 @@ def test_every_public_install_workflow_verifies_provenance_first():
     assert not offenders, f"install workflows without provenance-first verification: {offenders}"
 
 
+def test_public_python_install_commands_use_isolated_mode():
+    offenders = []
+    for path in _public_instruction_files():
+        text = path.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if re.search(r"-m\s+pip\s+install\s+[\"']?fivedrisk", line):
+                if " -I -m pip install " not in line:
+                    offenders.append(f"{path.relative_to(ROOT)}: {line.strip()}")
+    assert not offenders, f"non-isolated fivedrisk installs: {offenders}"
+
+
+def test_gateway_claims_are_bounded_and_protocol_is_public():
+    root = (ROOT / "README.md").read_text(encoding="utf-8")
+    package = (ROOT / "fivedrisk" / "README.md").read_text(encoding="utf-8")
+    protocol = (ROOT / "docs" / "gateway-protocol.md").read_text(encoding="utf-8")
+    combined = root + package
+    assert "governance parity" not in combined.lower()
+    assert "| Surface | Input scans | Session drift |" in root
+    for required in (
+        "protocol_version", "engine_version", "unique `id`", "Exact `ORANGE`",
+        "timeout", "EOF", "UnsupportedPolicyControls", "--log-path",
+    ):
+        assert required in protocol
+
+
+def test_public_install_commands_pin_skill_cli_source_and_node_client():
+    prose = "\n".join(
+        path.read_text(encoding="utf-8") for path in _public_instruction_files()
+    )
+    assert "npx skills add" not in prose
+    assert "npx --yes skills add" not in prose
+    assert "skills@1.7.2" in prose
+    assert "--branch v0.7.1" in prose
+    assert "npm install fivedrisk-gateway\n" not in prose
+    assert "fivedrisk-gateway@0.7.1" in prose
+
+
+def test_framework_and_script_support_claims_are_bounded():
+    root = (ROOT / "README.md").read_text(encoding="utf-8")
+    plugin = (ROOT / "fivedrisk-plugin" / "README.md").read_text(encoding="utf-8")
+    adapters = (
+        ROOT / "fivedrisk-plugin" / "skills" / "fivedrisk-setup" /
+        "references" / "adapters.md"
+    ).read_text(encoding="utf-8")
+    assert "provisional adapters" in root
+    assert "tested with local fakes" in adapters
+    assert "Native Windows without WSL is not supported" in plugin
+
+
+def test_skill_shell_examples_do_not_use_angle_bracket_assignments():
+    skill = (
+        ROOT / "fivedrisk-plugin" / "skills" / "fivedrisk-setup" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "FIVEDRISK_SURFACE=<" not in skill
+
+
 def test_python_ci_exercises_the_noneditable_installed_distribution():
     workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(
         encoding="utf-8"

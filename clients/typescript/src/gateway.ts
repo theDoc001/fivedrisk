@@ -82,6 +82,8 @@ export interface GatewayOptions {
   args?: string[];
   /** Path to a policy.yaml (adds "--policy <path>"). */
   policyPath?: string;
+  /** Explicit SQLite audit path (adds "--log-path <path>"). */
+  logPath?: string;
   /** Max ms to wait for the startup handshake. Default 10000. */
   startupTimeoutMs?: number;
   /** Max ms to wait for a single score response. Default 5000. */
@@ -196,7 +198,10 @@ export class FivedriskGateway {
   private seq = 0;
   private closed = false;
   private readonly configurationError?: string;
-  private readonly opts: Required<Omit<GatewayOptions, "policyPath">> & { policyPath?: string };
+  private readonly opts: Required<Omit<GatewayOptions, "policyPath" | "logPath">> & {
+    policyPath?: string;
+    logPath?: string;
+  };
 
   constructor(options: GatewayOptions) {
     const suppliedArgs = options.args;
@@ -210,7 +215,9 @@ export class FivedriskGateway {
       configurationError = "gateway command must be an absolute verified Python executable path";
     }
     this.configurationError = configurationError;
-    const fullArgs = options.policyPath ? [...args, "--policy", options.policyPath] : args;
+    const fullArgs = [...args];
+    if (options.policyPath) fullArgs.push("--policy", options.policyPath);
+    if (options.logPath) fullArgs.push("--log-path", options.logPath);
     this.opts = {
       command: options.command,
       args: fullArgs,
@@ -218,6 +225,7 @@ export class FivedriskGateway {
       requestTimeoutMs: options.requestTimeoutMs ?? 5_000,
       hasApprovalChannel: options.hasApprovalChannel ?? false,
       policyPath: options.policyPath,
+      logPath: options.logPath,
     };
     this.ready = this.configurationError ? Promise.resolve() : this.start();
   }

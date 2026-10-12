@@ -18,12 +18,12 @@ is not proof that a particular invocation was approved.
 # Python side (the engine):
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 PYTHON_BIN="$("$PYTHON_BIN" -I -c 'import sys; print(sys.executable)')"
-"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -m pip install "fivedrisk>=0.7.1,<0.8.0"
 "$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 export FIVEDRISK_PYTHON="$PYTHON_BIN"
 
 # Node side (this client):
-npm install fivedrisk-gateway
+npm install fivedrisk-gateway@0.7.1
 ```
 
 The client has no PATH-based Python fallback. `command` is required, and startup
@@ -31,6 +31,8 @@ fails closed unless the command is an absolute interpreter path and the gateway
 identifies itself as `fivedrisk`, speaks protocol 1, and reports a stable supported
 version `>=0.7.1,<0.8.0`. Custom argv is rejected; the exact legacy argv is accepted
 only as an input compatibility form and normalized to the isolated bootstrap.
+The wire contract, including handshake, correlation, and fail-closed dispositions, is
+[`docs/gateway-protocol.md`](../../docs/gateway-protocol.md).
 
 ## Core client
 
@@ -39,7 +41,11 @@ import { FivedriskGateway } from "fivedrisk-gateway";
 
 const python = process.env.FIVEDRISK_PYTHON;
 if (!python) throw new Error("Set FIVEDRISK_PYTHON to the verified absolute interpreter path");
-const gw = new FivedriskGateway({ command: python });
+const gw = new FivedriskGateway({
+  command: python,
+  policyPath: "/absolute/path/policy.yaml",
+  logPath: "/absolute/path/fivedrisk-decisions.db",
+});
 
 const verdict = await gw.score({ toolName: "Bash", toolInput: { command: "rm -rf /data" } });
 // verdict.band === "RED", verdict.sentinel === "block", verdict.blocked === true

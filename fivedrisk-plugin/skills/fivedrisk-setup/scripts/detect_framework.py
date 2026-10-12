@@ -35,32 +35,36 @@ class Adapter:
 ADAPTERS: List[Adapter] = [
     Adapter("crewai", "CrewAI",
             "from fivedrisk.framework_adapters import make_crewai_pre_tool_hook",
-            "on(InterceptionPoint.PRE_TOOL_CALL)(make_crewai_pre_tool_hook())"),
+            "on(InterceptionPoint.PRE_TOOL_CALL)(make_crewai_pre_tool_hook(policy=policy, log=audit_log))"),
     Adapter("agents", "OpenAI Agents SDK",
             "from fivedrisk.framework_adapters import make_openai_tool_input_guardrail",
-            "@function_tool(tool_input_guardrails=[make_openai_tool_input_guardrail()])"),
+            "@function_tool(tool_input_guardrails=[make_openai_tool_input_guardrail(policy=policy, log=audit_log)])"),
     Adapter("google.adk", "Google ADK",
             "from fivedrisk.framework_adapters import make_adk_before_tool_callback",
-            "LlmAgent(..., before_tool_callback=make_adk_before_tool_callback())"),
+            "LlmAgent(..., before_tool_callback=make_adk_before_tool_callback(policy=policy, log=audit_log))"),
     Adapter("pydantic_ai", "Pydantic AI",
             "from fivedrisk.framework_adapters import make_pydantic_process_tool_call",
-            "MCPToolset(..., process_tool_call=make_pydantic_process_tool_call())"),
+            "MCPToolset(..., process_tool_call=make_pydantic_process_tool_call(policy=policy, log=audit_log))"),
     Adapter("agent_framework", "Microsoft Agent Framework",
             "from fivedrisk.framework_adapters import make_ms_agent_framework_middleware",
-            "ChatAgent(..., middleware=make_ms_agent_framework_middleware())"),
+            "ChatAgent(..., middleware=make_ms_agent_framework_middleware(policy=policy, log=audit_log))"),
     Adapter("langgraph", "LangGraph",
             "from fivedrisk.langgraph_node import fivedrisk_gate_node",
-            "graph.add_node('fivedrisk_gate', fivedrisk_gate_node)"),
+            "graph.add_node('fivedrisk_gate', lambda state: fivedrisk_gate_node(state, policy=policy, log=audit_log))"),
     Adapter("__claude_code__", "Claude Code (CLI hook)",
             "# no import — separate manual host integration; public skill is advisory",
             "Review https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin/manual", node=True),
     Adapter("__vercel__", "Vercel AI SDK (Node)",
             'import { FivedriskGateway, guardVercelTool } from "fivedrisk-gateway";',
-            f"const gw = new FivedriskGateway({{ command: {json.dumps(sys.executable)} }}); "
+            f"const gw = new FivedriskGateway({{ command: {json.dumps(sys.executable)}, "
+            'policyPath: "/absolute/path/policy.yaml", '
+            'logPath: "/absolute/path/fivedrisk-decisions.db" }); '
             'const gatedTool = guardVercelTool(gw, "my_tool", tool);', node=True),
     Adapter("__genkit__", "Genkit (Node)",
             'import { FivedriskGateway, guardGenkitTool } from "fivedrisk-gateway";',
-            f"const gw = new FivedriskGateway({{ command: {json.dumps(sys.executable)} }}); "
+            f"const gw = new FivedriskGateway({{ command: {json.dumps(sys.executable)}, "
+            'policyPath: "/absolute/path/policy.yaml", '
+            'logPath: "/absolute/path/fivedrisk-decisions.db" }); '
             'ai.defineTool({ name: "my_tool" }, '
             'guardGenkitTool(gw, "my_tool", handler));', node=True),
 ]
@@ -103,13 +107,18 @@ def main() -> int:
     rows = detect()
     any_py = any(r["installed"] for r in rows if not r["node"])
     print("5D adapter coverage — wire the one that matches your stack:\n")
+    print("First load an explicit policy and audit log as `policy` and `audit_log`;")
+    print("see references/adapters.md. Factory defaults are not deployment configuration.\n")
     for row in rows:
         print(_fmt(row))
         print()
     shell_python = shlex.quote(sys.executable)
     print("[•] Other languages / custom hosts")
     print("      Generic long-lived JSON-lines gateway")
-    print(f"      {shell_python} -I -m fivedrisk._bootstrap gateway stdio --policy policy.yaml")
+    print(
+        f"      {shell_python} -I -m fivedrisk._bootstrap --policy policy.yaml "
+        "--log-path /absolute/path/fivedrisk-decisions.db gateway stdio"
+    )
     print()
     if not any_py:
         print("No Python agent framework detected. That's fine — you can still use the")

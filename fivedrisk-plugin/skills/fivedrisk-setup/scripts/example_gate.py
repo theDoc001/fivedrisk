@@ -23,7 +23,8 @@ from fivedrisk.logger import DecisionLog
 # Absence selects shipped defaults. A non-empty explicit path is always passed to
 # the loader so a missing or invalid operator policy fails loudly.
 _policy = os.environ.get("FIVEDRISK_POLICY_PATH")
-configure(policy_path=_policy or None)
+_audit_path = os.environ.get("FIVEDRISK_AUDIT_PATH")
+configure(policy_path=_policy or None, log_path=_audit_path or None)
 
 
 @gate(tool_name="Bash", autonomy_context=2)
@@ -48,12 +49,12 @@ def main() -> None:
         raise RuntimeError("destructive simulated call was not denied")
 
     print("\n--- audit log (last 5 decisions) ---")
-    for row in DecisionLog().query_recent(limit=5):
+    for row in DecisionLog(_audit_path).query_recent(limit=5):
         print(f"  {row['band']:6}  {row['tool_name']:8}  {row['rationale']}")
 
     print(
         f"\nFor a running summary:  {sys.executable} "
-        "-I -m fivedrisk._bootstrap stats"
+        f"-I -m fivedrisk._bootstrap --log-path {_audit_path or 'fivedrisk_decisions.db'} stats"
     )
 
 

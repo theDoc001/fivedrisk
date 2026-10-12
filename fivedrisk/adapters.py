@@ -138,8 +138,19 @@ def to_verdict(
 
     def _fail_closed(reason: str, *, error: Optional[str] = None,
                      error_type: Optional[str] = None) -> Verdict:
-        return Verdict(band="RED", sentinel=BLOCK, blocked=True, reason=reason,
-                       error=error, error_type=error_type, trace=trace)
+        nonlocal log
+        if log is None:
+            log = DecisionLog()
+        logged_name = tool_name if isinstance(tool_name, str) and tool_name.strip() else "Unknown"
+        logged_session_id = session_id if type(session_id) is str else None
+        row_id = log.log_egress_block(
+            logged_name, reason, logged_session_id, source=f"{source}-error"
+        )
+        return Verdict(
+            band="RED", sentinel=BLOCK, blocked=True, reason=reason,
+            decision_id=f"dec-{row_id}", audit_log_id=row_id,
+            error=error, error_type=error_type, trace=trace,
+        )
 
     if type(tool_name) is not str or not tool_name.strip():
         return _fail_closed(
@@ -169,6 +180,26 @@ def to_verdict(
         )
     if session_id is not None:
         trace.setdefault("session_id", session_id)
+
+    unsupported_controls = []
+    if policy.identity_required:
+        unsupported_controls.append("identity_required")
+    if policy.retry_budget is not None:
+        unsupported_controls.append("retry_budget")
+    if policy.max_session_budget_tokens is not None:
+        unsupported_controls.append("max_session_budget_tokens")
+    if policy.max_tool_call_budget_tokens is not None:
+        unsupported_controls.append("max_tool_call_budget_tokens")
+    if unsupported_controls:
+        reason = (
+            "shared verdict surface cannot enforce configured admission controls: "
+            + ", ".join(unsupported_controls)
+        )
+        return _fail_closed(
+            reason,
+            error=reason,
+            error_type="UnsupportedPolicyControls",
+        )
 
     # Pre-score input layers: injection scan, then policy-driven semantic review.
     input_text = str(tool_input)

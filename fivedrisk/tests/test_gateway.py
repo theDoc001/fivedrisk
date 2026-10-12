@@ -25,10 +25,8 @@ def policy():
     return Policy()
 
 
-class TestGatewayParity:
-    """E2: the gateway reuses the SDK input layers (injection, semantic review) +
-    Markov drift so non-Python hosts get the same governance (destination policy
-    stays SDK/configure-side)."""
+class TestGatewaySharedControls:
+    """The gateway reuses input scans and drift without overstating other controls."""
 
     def test_injection_in_input_blocks(self, log, policy):
         d = gateway.score_action_dict(
@@ -68,6 +66,17 @@ class TestGatewayParity:
         )
         assert d.get("blocked") is None
         assert d["band"] == "GREEN"
+
+    @pytest.mark.parametrize(
+        "policy",
+        [Policy(identity_required=True), Policy(retry_budget=1),
+         Policy(max_session_budget_tokens=10)],
+    )
+    def test_unsupported_admission_controls_fail_closed(self, log, policy):
+        decision = gateway.score_action_dict(
+            {"tool_name": "Read", "params": {"file_path": "/tmp/a"}}, policy, log
+        )
+        assert decision["error_type"] == "UnsupportedPolicyControls"
 
 
 # ─── score_action_dict ────────────────────────────────────────────

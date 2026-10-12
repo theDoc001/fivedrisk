@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
 from .adapters import Verdict, sentinel_blocks, to_verdict
+from .logger import DecisionLog
 from .policy import Policy
 
 
@@ -46,6 +47,10 @@ def _gate_decision(
     has_approval_channel: bool,
     autonomy: Optional[int],
     source: str,
+    log: Optional[DecisionLog] = None,
+    session_id_resolver: Optional[Callable[[Any], Optional[str]]] = None,
+    session_context: Any = None,
+    require_session_id: bool = False,
 ) -> _GateDecision:
     """Score one tool call and decide whether the framework should stop it.
 
@@ -58,9 +63,42 @@ def _gate_decision(
     object. Wrapping a hostile non-dict payload under a synthetic key would hide
     it from the classifier and demote a stop into a go (QA-M1 finding).
     """
+    def session_failure(reason: str, error_type: str) -> _GateDecision:
+        effective_log = log or DecisionLog()
+        logged_name = tool_name if isinstance(tool_name, str) and tool_name.strip() else "Unknown"
+        row_id = effective_log.log_egress_block(
+            logged_name, reason, None, source=f"{source}-session-error"
+        )
+        verdict = Verdict(
+            band="RED", sentinel="block", blocked=True, reason=reason,
+            decision_id=f"dec-{row_id}", audit_log_id=row_id,
+            error_type=error_type,
+        )
+        return _GateDecision(block=True, reason=reason, verdict=verdict)
+
+    resolved_session_id = session_id
+    if session_id_resolver is not None:
+        try:
+            resolved_session_id = session_id_resolver(session_context)
+        except Exception:
+            return session_failure(
+                "session id resolver failed", "SessionResolutionError"
+            )
+    if resolved_session_id is not None and (
+        type(resolved_session_id) is not str or not resolved_session_id
+    ):
+        return session_failure(
+            "session id resolver must return a non-empty string or null",
+            "SessionResolutionError",
+        )
+    if require_session_id and resolved_session_id is None:
+        return session_failure(
+            "session id required for framework adapter", "SessionRequired"
+        )
+
     verdict = to_verdict(
         tool_name, tool_input, policy,
-        session_id=session_id, autonomy=autonomy, source=source,
+        session_id=resolved_session_id, log=log, autonomy=autonomy, source=source,
     )
     block = sentinel_blocks(verdict.sentinel, has_approval_channel=has_approval_channel)
     return _GateDecision(block=block, reason=verdict.reason if block else "", verdict=verdict)
@@ -94,6 +132,9 @@ def make_crewai_pre_tool_hook(
     policy: Optional[Policy] = None,
     *,
     session_id: Optional[str] = None,
+    session_id_resolver: Optional[Callable[[Any], Optional[str]]] = None,
+    require_session_id: bool = False,
+    log: Optional[DecisionLog] = None,
     has_approval_channel: bool = False,
     autonomy: Optional[int] = None,
     source: str = "crewai",
@@ -116,6 +157,7 @@ def make_crewai_pre_tool_hook(
         decision = _gate_decision(
             getattr(ctx, "tool_name", None), getattr(ctx, "tool_input", {}),
             policy, session_id, has_approval_channel, autonomy, source,
+            log, session_id_resolver, ctx, require_session_id,
         )
         if decision.block:
             hook_aborted = _hook_aborted or _import_crewai_hook_aborted()
@@ -135,6 +177,9 @@ def make_adk_before_tool_callback(
     policy: Optional[Policy] = None,
     *,
     session_id: Optional[str] = None,
+    session_id_resolver: Optional[Callable[[Any], Optional[str]]] = None,
+    require_session_id: bool = False,
+    log: Optional[DecisionLog] = None,
     has_approval_channel: bool = False,
     autonomy: Optional[int] = None,
     source: str = "adk",
@@ -148,6 +193,7 @@ def make_adk_before_tool_callback(
         decision = _gate_decision(
             getattr(tool, "name", None), args,
             policy, session_id, has_approval_channel, autonomy, source,
+            log, session_id_resolver, tool_context, require_session_id,
         )
         if decision.block:
             return {
@@ -181,6 +227,9 @@ def make_openai_tool_input_guardrail(
     policy: Optional[Policy] = None,
     *,
     session_id: Optional[str] = None,
+    session_id_resolver: Optional[Callable[[Any], Optional[str]]] = None,
+    require_session_id: bool = False,
+    log: Optional[DecisionLog] = None,
     has_approval_channel: bool = False,
     autonomy: Optional[int] = None,
     source: str = "openai_agents",
@@ -221,6 +270,7 @@ def make_openai_tool_input_guardrail(
 
         decision = _gate_decision(
             tool_name, tool_input, policy, session_id, has_approval_channel, autonomy, source,
+            log, session_id_resolver, data, require_session_id,
         )
         info = _info(decision.verdict)
         if decision.block:
@@ -243,6 +293,9 @@ def make_pydantic_process_tool_call(
     policy: Optional[Policy] = None,
     *,
     session_id: Optional[str] = None,
+    session_id_resolver: Optional[Callable[[Any], Optional[str]]] = None,
+    require_session_id: bool = False,
+    log: Optional[DecisionLog] = None,
     has_approval_channel: bool = False,
     autonomy: Optional[int] = None,
     source: str = "pydantic_ai",
@@ -262,6 +315,7 @@ def make_pydantic_process_tool_call(
     async def process_tool_call(ctx: Any, call_tool: Any, name: str, tool_args: Dict[str, Any]) -> Any:
         decision = _gate_decision(
             name, tool_args, policy, session_id, has_approval_channel, autonomy, source,
+            log, session_id_resolver, ctx, require_session_id,
         )
         if decision.block:
             return f"blocked by 5D: {decision.reason}"
@@ -282,6 +336,9 @@ def make_ms_agent_framework_middleware(
     policy: Optional[Policy] = None,
     *,
     session_id: Optional[str] = None,
+    session_id_resolver: Optional[Callable[[Any], Optional[str]]] = None,
+    require_session_id: bool = False,
+    log: Optional[DecisionLog] = None,
     has_approval_channel: bool = False,
     autonomy: Optional[int] = None,
     source: str = "ms_agent_framework",
@@ -305,6 +362,7 @@ def make_ms_agent_framework_middleware(
         decision = _gate_decision(
             getattr(function, "name", None), getattr(context, "arguments", {}),
             policy, session_id, has_approval_channel, autonomy, source,
+            log, session_id_resolver, context, require_session_id,
         )
         if decision.block:
             context.result = f"blocked by 5D: {decision.reason}"

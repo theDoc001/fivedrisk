@@ -272,7 +272,7 @@ Both are warnings rather than errors, so no policy that validated before fails n
 ---
 ## [0.6.0] - 2026-07-25
 
-> **0.6.0** — framework integrations. Adds native, fail-closed adapters for the mainstream 2026 agent frameworks over one shared verdict socket, a structured Claude Code hook, a TypeScript gateway client, a setup skill, two new red-line floor axes, and an opt-in decision-memory primitive. No break to the nine locked public symbols. Folds in the prepared-but-unpublished 0.5.4 remediation cycle.
+> **0.6.0** — framework integrations. Adds provisional, fail-closed adapters for five agent frameworks over one shared verdict path, a structured Claude Code hook, a TypeScript gateway client, a setup skill, two new red-line floor axes, and an opt-in decision-memory primitive. No break to the nine locked public symbols. Folds in the prepared-but-unpublished 0.5.4 remediation cycle.
 
 ### Added
 - **Adapter kit** (`fivedrisk.adapters`) — `to_verdict()`, the one canonical scoring path every integration builds on (extracted from the gateway with no behavior change), plus the canonical never-demote `band_to_sentinel()` map (RED→block, ORANGE never execute, unknown→block).
@@ -317,7 +317,7 @@ Both are warnings rather than errors, so no policy that validated before fails n
 
 ### Added
 - **`scan-output` CLI subcommand (E1).** Wraps the shipped `fivedrisk_post_tool` egress scan (leakage / injection-echo) so the Claude Code plugin's PostToolUse hook can block on tool output (`python -m fivedrisk scan-output -`, exit 2 on block).
-- **Gateway governance parity (E2).** `fivedrisk.gateway` (non-Python hosts) now reuses the SDK input layers: prompt-injection scan + policy-driven semantic review before scoring (a hit blocks), and Markov session-drift after scoring. Destination policy stays SDK/configure-side.
+- **Gateway shared evaluation path (E2).** `fivedrisk.gateway` (non-Python hosts) reuses the SDK input layers: prompt-injection scan + policy-driven semantic review before scoring (a hit blocks), and Markov session-drift after scoring. Identity, retry, token-budget admission, and destination policy remain outside protocol 1.
 - **`FivedriskDenial`** base exception (see below).
 - **`SessionRequiredError` / `DestinationBlockError`** — two new `FivedriskDenial` subclasses for the session-required and destination-policy gate blocks (see the Changed — BEHAVIOR note).
 - **`validate` floor-control warning.** `fivedrisk validate` now warns when a RED/ORANGE floor rule is gated on `command_contains` — a best-effort, case-sensitive substring that is evadable (casing/whitespace/encoding). Hard/regulated controls should key on `tool_name` alone (unconditional). `FloorRule` docstring + README floor example updated to steer hard controls to `tool_name`-only floors.
