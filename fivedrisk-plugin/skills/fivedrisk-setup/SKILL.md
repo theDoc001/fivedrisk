@@ -168,7 +168,8 @@ the tool-execution path protects nothing.
 | **LangGraph** | `fivedrisk_gate_node` | `graph.add_node("fivedrisk_gate", node)` |
 | **Claude Code** | separate manual integration | reviewed host-specific guide, not included in the public artifact |
 | **Vercel AI SDK / Genkit** (Node) | `fivedrisk-gateway` npm pkg | `guardVercelTool` / `guardGenkitTool` |
-| **Anything else** | `@gate` decorator | wrap any function with `@gate(tool_name=...)` |
+| **Custom Python** | `@gate` decorator | wrap a data-only execution boundary with `@gate(tool_name=...)` |
+| **Other languages / hosts** | generic JSON-lines gateway | run `_bootstrap gateway stdio` as a long-lived subprocess |
 
 Then select a policy from the installed package. Inspect a preset before copying it to
 an operator-owned path; never edit the packaged preset in place.

@@ -148,6 +148,26 @@ def test_node_detector_rows_carry_the_selected_interpreter():
     assert 'name: "my_tool"' in rows["Genkit (Node)"]["wiring"]
 
 
+def test_detector_offers_generic_json_lines_gateway_for_other_hosts():
+    out = subprocess.run(
+        [sys.executable, str(DETECT)], capture_output=True, text=True, timeout=30
+    )
+    assert out.returncode == 0
+    assert "_bootstrap gateway stdio" in out.stdout
+    assert "JSON-lines" in out.stdout
+
+
+def test_skill_routes_python_and_non_python_custom_hosts_separately():
+    skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    adapters = (SKILL / "references" / "adapters.md").read_text(encoding="utf-8")
+    assert "**Custom Python**" in skill
+    assert "**Other languages / hosts**" in skill
+    assert "`_bootstrap gateway stdio`" in skill
+    assert "## Generic non-Python gateway" in adapters
+    assert "-I -m fivedrisk._bootstrap gateway stdio --policy" in adapters
+    assert "JSON-lines" in adapters
+
+
 def test_example_gate_runs_and_shows_green_and_blocked_red():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(DEV)
@@ -432,6 +452,17 @@ def test_observer_contract_is_monotonic_fail_closed_and_design_only():
     assert "benchmark-only" in text
     assert "deterministic regular expressions" in text
     assert "thresholds remain `uncalibrated`" in text
+
+
+def test_typesafe_observer_example_is_typed_calibrated_and_application_owned():
+    text = OBSERVER_OPTIONS.read_text(encoding="utf-8")
+    assert "from typesafe_sdk import Noul, NoulCriteria, TypeSafeClient" in text
+    assert 'instructions="Does this action require semantic escalation?"' in text
+    assert "criteria=NoulCriteria(" in text
+    assert 'response.answers["requires_escalation"].noul' in text
+    assert "representative labeled deployment cases" in text
+    assert "example thresholds are placeholders" in text
+    assert "Application code owns the threshold" in text
 
 
 def test_host_packaging_claims_keep_public_advice_separate_from_manual_hooks():

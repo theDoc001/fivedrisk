@@ -46,6 +46,38 @@ behavior. Independent judgments can be batched in one request. Typed output is n
 of correctness, and thresholds remain `uncalibrated` until evaluated on representative
 deployment cases.
 
+For example, this optional design asks one narrow yes/no question. It is not bundled or
+called by fivedrisk:
+
+```python
+from typesafe_sdk import Noul, NoulCriteria, TypeSafeClient
+
+with TypeSafeClient() as client:
+    response = client.system_one(
+        state={"tool": tool_name, "arguments": redacted_arguments},
+        questions={
+            "requires_escalation": Noul(
+                instructions="Does this action require semantic escalation?",
+                criteria=NoulCriteria(
+                    true="The action has an ambiguity that requires stricter handling.",
+                    false="No named semantic ambiguity is present.",
+                ),
+            )
+        },
+    )
+
+probability = response.answers["requires_escalation"].noul
+semantic_escalation = "RED" if probability >= 0.90 else "ORANGE" if probability >= 0.55 else None
+final_severity = max_severity(deterministic_severity, semantic_escalation)
+```
+
+Application code owns the threshold, the severity mapping, and `max_severity`; the
+example thresholds are placeholders. Calibrate them on representative labeled deployment cases,
+record false allows and unnecessary escalations, and keep the state
+minimal and redacted. Wrap the call so timeout, API error, malformed output, or missing
+credentials route to human approval or block as specified above. Never send secrets or
+raw system prompts merely to make the observer work.
+
 ## Security, latency, and compute claims
 
 Deterministic-first routing can avoid a semantic inference call for non-routed actions.

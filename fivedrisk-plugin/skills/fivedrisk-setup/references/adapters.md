@@ -97,7 +97,7 @@ const gatedTool = guardVercelTool(gw, "write_to_database", tool);           // V
 // Genkit:  ai.defineTool({name}, guardGenkitTool(gw, "write_to_database", handler));
 ```
 
-## Anything else — the `@gate` decorator
+## Custom Python: the `@gate` decorator
 
 `@gate` accepts detached exact built-in action data only: `None`, booleans,
 integers, finite floats, strings, lists, tuples, and string-keyed dictionaries.
@@ -114,6 +114,22 @@ from fivedrisk.hooks import gate
 async def write_record(table: str, data: dict) -> None:
     ...   # runs only on GREEN/YELLOW; ORANGE → held for human review; RED → blocked
 ```
+
+## Generic non-Python gateway
+
+For Go, Rust, custom JavaScript, and other hosts, start one long-lived subprocess and
+exchange one JSON request and one JSON decision per line over standard input/output:
+
+```bash
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap gateway stdio --policy policy.yaml
+```
+
+Use the public JSON-lines protocol documented in the repository README. Keep the process
+alive rather than starting Python for every action. The caller must place the request at
+the actual pre-execution boundary and must treat startup failure, timeout, malformed
+output, an unknown decision, or a closed pipe as blocked. A transport connection alone
+does not prove that every tool path is gated; verify allowed and denied actions end to
+end in the host application.
 
 ## §policy
 
