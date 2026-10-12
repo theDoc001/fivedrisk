@@ -153,7 +153,8 @@ def test_detector_offers_generic_json_lines_gateway_for_other_hosts():
         [sys.executable, str(DETECT)], capture_output=True, text=True, timeout=30
     )
     assert out.returncode == 0
-    assert "_bootstrap gateway stdio" in out.stdout
+    assert "_bootstrap --policy policy.yaml" in out.stdout
+    assert "gateway stdio" in out.stdout
     assert "JSON-lines" in out.stdout
 
 
@@ -164,7 +165,8 @@ def test_skill_routes_python_and_non_python_custom_hosts_separately():
     assert "**Other languages / hosts**" in skill
     assert "`_bootstrap gateway stdio`" in skill
     assert "## Generic non-Python gateway" in adapters
-    assert "-I -m fivedrisk._bootstrap gateway stdio --policy" in adapters
+    assert "-I -m fivedrisk._bootstrap --policy policy.yaml" in adapters
+    assert "gateway stdio" in adapters
     assert "JSON-lines" in adapters
 
 
@@ -544,7 +546,7 @@ def test_skill_stops_when_distribution_installation_is_unavailable():
 
 
 def test_public_docs_use_the_canonical_skills_cli_install_target():
-    command = "npx skills add theDoc001/fivedrisk --skill fivedrisk-setup"
+    command = "npx --yes skills@1.7.2 add . --skill fivedrisk-setup"
     root_readme = (DEV / "README.md").read_text(encoding="utf-8")
     plugin_readme = (DEV / "fivedrisk-plugin" / "README.md").read_text(
         encoding="utf-8"
@@ -617,6 +619,7 @@ def test_bundled_helpers_run_from_an_unrelated_working_directory(tmp_path):
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     env["PYTHON_BIN"] = sys.executable
+    env["FIVEDRISK_SURFACE"] = "gate"
     commands = [
         [sys.executable, str(DETECT)],
         ["/bin/bash", str(VERIFY)],
@@ -631,10 +634,13 @@ def test_bundled_helpers_run_from_an_unrelated_working_directory(tmp_path):
     assert [result.returncode for result in results] == [0, 0, 0]
 
 
-def _run_verify(policy: Path | None, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _run_verify(
+    policy: Path | None, cwd: Path, surface: str = "gate"
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     env["PYTHON_BIN"] = sys.executable
+    env["FIVEDRISK_SURFACE"] = surface
     if policy is None:
         env.pop("FIVEDRISK_POLICY_PATH", None)
     else:
@@ -703,7 +709,9 @@ def test_verify_install_enforces_supported_stable_version(tmp_path, version, acc
         check=True, capture_output=True, text=True, timeout=30,
     ).stdout.strip())
     _fake_distribution(site_dir, editable=False, version=version)
-    run_env = {**os.environ, "PYTHON_BIN": str(python)}
+    run_env = {
+        **os.environ, "PYTHON_BIN": str(python), "FIVEDRISK_SURFACE": "gate"
+    }
     run_env.pop("PYTHONPATH", None)
     out = subprocess.run(
         ["/bin/bash", str(VERIFY)], cwd=tmp_path, capture_output=True,
@@ -744,7 +752,8 @@ def test_documented_claude_hook_quotes_interpreter_paths_with_spaces(tmp_path):
         )
         assert out.returncode == 0, out.stdout + out.stderr
         assert arg_log.read_text().splitlines() == [
-            "-I", "-m", "fivedrisk._bootstrap", "claude-hook",
+            "-I", "-m", "fivedrisk._bootstrap", "--policy", "<POLICY_PATH>",
+            "--log-path", "<AUDIT_PATH>", "claude-hook",
         ]
 
 
@@ -757,7 +766,10 @@ def test_verify_install_ignores_side_effecting_cwd_and_pythonpath_shadow(tmp_pat
         f"Path({str(marker)!r}).write_text('ran')\n",
         encoding="utf-8",
     )
-    env = {**os.environ, "PYTHON_BIN": sys.executable, "PYTHONPATH": str(tmp_path)}
+    env = {
+        **os.environ, "PYTHON_BIN": sys.executable, "PYTHONPATH": str(tmp_path),
+        "FIVEDRISK_SURFACE": "gate",
+    }
     out = subprocess.run(
         ["/bin/bash", str(VERIFY)], cwd=tmp_path, capture_output=True,
         text=True, timeout=30, env=env,
@@ -792,7 +804,10 @@ def test_documented_isolated_example_ignores_hostile_cwd_and_pythonpath(tmp_path
 
 def test_verify_install_passes_from_the_source_checkout(tmp_path):
     marker = tmp_path / "unexpected-marker"
-    env = {**os.environ, "PYTHON_BIN": sys.executable, "PYTHONPATH": str(tmp_path)}
+    env = {
+        **os.environ, "PYTHON_BIN": sys.executable, "PYTHONPATH": str(tmp_path),
+        "FIVEDRISK_SURFACE": "gate",
+    }
     out = subprocess.run(
         ["/bin/bash", str(VERIFY)], cwd=DEV, capture_output=True,
         text=True, timeout=30, env=env,
@@ -814,7 +829,9 @@ def test_verify_install_rejects_editable_distribution(tmp_path):
         check=True, capture_output=True, text=True, timeout=30,
     ).stdout.strip())
     _fake_distribution(site_dir, editable=True)
-    env = {**os.environ, "PYTHON_BIN": str(python)}
+    env = {
+        **os.environ, "PYTHON_BIN": str(python), "FIVEDRISK_SURFACE": "gate"
+    }
     env.pop("PYTHONPATH", None)
     out = subprocess.run(
         ["/bin/bash", str(VERIFY)], cwd=tmp_path, capture_output=True,
@@ -837,7 +854,9 @@ def test_verify_install_rejects_missing_distribution_metadata(tmp_path):
         check=True, capture_output=True, text=True, timeout=30,
     ).stdout.strip())
     _fake_distribution(site_dir, editable=False, with_metadata=False)
-    env = {**os.environ, "PYTHON_BIN": str(python)}
+    env = {
+        **os.environ, "PYTHON_BIN": str(python), "FIVEDRISK_SURFACE": "gate"
+    }
     env.pop("PYTHONPATH", None)
     out = subprocess.run(
         ["/bin/bash", str(VERIFY)], cwd=tmp_path, capture_output=True,
@@ -869,6 +888,16 @@ def test_verify_install_requires_explicit_interpreter():
     )
     assert out.returncode != 0
     assert "PYTHON_BIN" in out.stderr
+
+
+def test_verify_install_requires_explicit_surface():
+    env = {**os.environ, "PYTHON_BIN": sys.executable}
+    env.pop("FIVEDRISK_SURFACE", None)
+    out = subprocess.run(
+        ["/bin/bash", str(VERIFY)], capture_output=True, text=True, timeout=30, env=env
+    )
+    assert out.returncode != 0
+    assert "FIVEDRISK_SURFACE" in out.stderr
 
 
 def test_verify_install_parses_built_in_policy_when_no_path_is_set(tmp_path):
@@ -905,6 +934,17 @@ def test_verify_install_surfaces_and_rejects_policy_warnings(tmp_path):
     assert "! warning:" in combined
     assert "verification incomplete" in combined
     assert "All required checks passed" not in combined
+
+
+def test_verify_install_is_surface_aware_for_identity_policy(tmp_path):
+    policy = tmp_path / "identity-policy.yaml"
+    policy.write_text("version: 1\nidentity_required: true\n", encoding="utf-8")
+    gate = _run_verify(policy, tmp_path, surface="gate")
+    gateway = _run_verify(policy, tmp_path, surface="gateway")
+    assert gate.returncode == 0, gate.stdout + gate.stderr
+    assert "! warning:" not in gate.stdout
+    assert gateway.returncode != 0
+    assert "identity_required" in gateway.stdout + gateway.stderr
 
 
 def test_example_gate_is_safe_to_repeat(tmp_path):

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -z \"${FIVEDRISK_PYTHON:-}\" ] || [ -z \"${CLAUDE_PLUGIN_ROOT:-}\" ]; then echo \"fivedrisk: required hook environment is unset; blocking\" >&2; exit 2; fi; \"$FIVEDRISK_PYTHON\" -I \"$CLAUDE_PLUGIN_ROOT/scripts/run_hook.py\" pre || exit 2"
+            "command": "if [ -z \"${FIVEDRISK_PYTHON:-}\" ] || [ -z \"${CLAUDE_PLUGIN_ROOT:-}\" ] || [ -z \"${FIVEDRISK_AUDIT_PATH:-}\" ]; then echo \"fivedrisk: required hook environment is unset; blocking\" >&2; exit 2; fi; \"$FIVEDRISK_PYTHON\" -I \"$CLAUDE_PLUGIN_ROOT/scripts/run_hook.py\" pre || exit 2"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -z \"${FIVEDRISK_PYTHON:-}\" ] || [ -z \"${CLAUDE_PLUGIN_ROOT:-}\" ]; then echo \"fivedrisk: required hook environment is unset; blocking\" >&2; exit 2; fi; \"$FIVEDRISK_PYTHON\" -I \"$CLAUDE_PLUGIN_ROOT/scripts/run_hook.py\" post || exit 2"
+            "command": "if [ -z \"${FIVEDRISK_PYTHON:-}\" ] || [ -z \"${CLAUDE_PLUGIN_ROOT:-}\" ] || [ -z \"${FIVEDRISK_AUDIT_PATH:-}\" ]; then echo \"fivedrisk: required hook environment is unset; blocking\" >&2; exit 2; fi; \"$FIVEDRISK_PYTHON\" -I \"$CLAUDE_PLUGIN_ROOT/scripts/run_hook.py\" post || exit 2"
           }
         ]
       }

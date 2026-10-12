@@ -13,6 +13,8 @@ import pytest
 from fivedrisk.cli import (
     _KNOWN_TOP_LEVEL_KEYS,
     _ACCEPTED_BUT_UNENFORCED_KEYS,
+    _identity_admission_warnings,
+    _surface_control_warnings,
     _unknown_key_warnings,
 )
 
@@ -46,6 +48,21 @@ def test_retry_budget_no_longer_warns_because_it_is_now_ENFORCED(tmp_path):
     (`hooks.check_retry_budget`), so the warning was removed rather than reworded.
     """
     assert _unknown_key_warnings(_write(tmp_path, "version: 1\nretry_budget: 3\n")) == []
+
+
+def test_surface_aware_validation_accepts_gate_and_warns_limited_surfaces(tmp_path):
+    path = _write(
+        tmp_path,
+        "version: 1\nidentity_required: true\nretry_budget: 2\n"
+        "max_session_budget_tokens: 100\n",
+    )
+    assert _identity_admission_warnings(path, "gate") == []
+    assert _surface_control_warnings(path, "gate") == []
+    assert _identity_admission_warnings(path, "gateway")
+    warnings = _surface_control_warnings(path, "gateway")
+    assert len(warnings) == 1
+    assert "retry_budget" in warnings[0]
+    assert "max_session_budget_tokens" in warnings[0]
 
 
 def test_the_unenforced_key_mechanism_still_exists_for_the_next_one(tmp_path):

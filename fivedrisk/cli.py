@@ -528,15 +528,15 @@ def _pattern_construct_audit(policy_path: str | None) -> list[str]:
     return findings
 
 
-def _identity_admission_warnings(policy_path: str | None) -> list[str]:
-    """Warn that ``identity_required`` is unenforced on the hook/gateway/langgraph paths.
+def _identity_admission_warnings(
+    policy_path: str | None, surface: str | None = None
+) -> list[str]:
+    """Warn that ``identity_required`` is unavailable off the ``@gate`` path.
 
     O2: ``identity_required: true`` denies ANONYMOUS callers only on the ``@gate``
-    admission path (``_perform_identity_admission``). The SDK PreToolUse hook
-    (``fivedrisk_pre_tool``), the JSON-lines gateway, and the LangGraph node do NOT
-    run identity admission — an operator who sets the flag expecting a hard control
-    gets a silent fail-open on those surfaces. Warn only when the flag is true;
-    silent when false or absent.
+    admission path (``_perform_identity_admission``). Limited shared-verdict surfaces
+    reject such a policy fail closed rather than silently approximating admission.
+    Warn only when the flag is true; silent when false or absent.
     """
     if policy_path is None:
         return []
@@ -548,11 +548,41 @@ def _identity_admission_warnings(policy_path: str | None) -> list[str]:
         return []  # load errors are reported by _validate_policy_config
     if not isinstance(raw, dict) or not bool(raw.get("identity_required", False)):
         return []
+    if surface == "gate":
+        return []
     return [
-        "identity_required: true is enforced ONLY on the @gate admission path — the "
-        "SDK-hook (fivedrisk_pre_tool), gateway, and langgraph paths do NOT run identity "
-        "admission, so ANONYMOUS callers are admitted there (fail-open). Enforce identity "
-        "upstream on those surfaces or route all tool calls through @gate."
+        "identity_required: true is enforced on the @gate admission path. The selected "
+        "SDK-hook, framework, gateway, or langgraph surface cannot perform identity "
+        "admission and rejects this policy fail closed. Enforce identity upstream or "
+        "route calls through @gate."
+    ]
+
+
+def _surface_control_warnings(
+    policy_path: str | None, surface: str | None = None
+) -> list[str]:
+    """Report controls that the selected execution surface cannot enforce."""
+    if policy_path is None:
+        return []
+    try:
+        policy = load_policy(policy_path)
+    except Exception:
+        return []
+    if surface == "gate":
+        return []
+    unsupported = []
+    if policy.retry_budget is not None:
+        unsupported.append("retry_budget")
+    if policy.max_session_budget_tokens is not None:
+        unsupported.append("max_session_budget_tokens")
+    if policy.max_tool_call_budget_tokens is not None:
+        unsupported.append("max_tool_call_budget_tokens")
+    if not unsupported:
+        return []
+    label = surface or "unspecified surface"
+    return [
+        f"{label} cannot enforce configured admission controls: {', '.join(unsupported)}. "
+        "Use --surface gate or remove those controls; limited surfaces fail closed at runtime."
     ]
 
 
@@ -565,7 +595,9 @@ def cmd_validate(args: argparse.Namespace) -> None:
     warnings += _floor_unsupplyable_axis_warnings(args.input)
     warnings += _floor_unknown_key_warnings(args.input)
     warnings += _spike_threshold_reachability_warnings(args.input)
-    warnings += _identity_admission_warnings(args.input)
+    surface = getattr(args, "surface", None)
+    warnings += _identity_admission_warnings(args.input, surface)
+    warnings += _surface_control_warnings(args.input, surface)
     warnings += _redos_lint_warnings(args.input)
     audit = _pattern_construct_audit(args.input) if getattr(args, "audit", False) else []
     payload = {
@@ -750,6 +782,12 @@ def main() -> None:
     p_validate.add_argument(
         "--audit", action="store_true",
         help="Inventory non-linear regex constructs (backref/lookaround) in the floor corpus",
+    )
+    p_validate.add_argument(
+        "--surface",
+        choices=["gate", "framework", "gateway", "langgraph", "sdk-hook"],
+        default=None,
+        help="Execution surface used by this policy; enables surface-specific checks",
     )
     p_validate.set_defaults(func=cmd_validate)
 

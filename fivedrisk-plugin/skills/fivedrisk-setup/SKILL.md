@@ -114,9 +114,13 @@ The package name is the literal
 upgrade a working installation unless the user requested an upgrade.
 
 ```bash
-"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
-PYTHON_BIN="$PYTHON_BIN" bash "$SKILL_ROOT/scripts/verify-install.sh"
+"$PYTHON_BIN" -I -m pip install "fivedrisk>=0.7.1,<0.8.0"
+FIVEDRISK_SURFACE=framework PYTHON_BIN="$PYTHON_BIN" \
+  bash "$SKILL_ROOT/scripts/verify-install.sh"
 ```
+
+Replace `framework` with the selected surface: `gate`, `gateway`, `langgraph`, or
+`sdk-hook` when applicable.
 
 The verifier is the first command allowed to import or execute the installed package.
 It checks distribution provenance in isolated mode before launching the package
@@ -160,12 +164,12 @@ the tool-execution path protects nothing.
 
 | Framework | Adapter | Wiring |
 |---|---|---|
-| **CrewAI** | `make_crewai_pre_tool_hook` | `on(InterceptionPoint.PRE_TOOL_CALL)(hook)` |
-| **OpenAI Agents SDK** | `make_openai_tool_input_guardrail` | `@function_tool(tool_input_guardrails=[g])` |
-| **Google ADK** | `make_adk_before_tool_callback` | `LlmAgent(before_tool_callback=cb)` |
-| **Pydantic AI** | `make_pydantic_process_tool_call` | `MCPToolset(process_tool_call=ptc)` |
-| **Microsoft Agent Framework** | `make_ms_agent_framework_middleware` | `ChatAgent(middleware=mw)` |
-| **LangGraph** | `fivedrisk_gate_node` | `graph.add_node("fivedrisk_gate", node)` |
+| **CrewAI** | `make_crewai_pre_tool_hook` | construct with `policy=policy, log=audit_log` |
+| **OpenAI Agents SDK** | `make_openai_tool_input_guardrail` | construct with `policy=policy, log=audit_log` |
+| **Google ADK** | `make_adk_before_tool_callback` | construct with `policy=policy, log=audit_log` |
+| **Pydantic AI** | `make_pydantic_process_tool_call` | construct with `policy=policy, log=audit_log` |
+| **Microsoft Agent Framework** | `make_ms_agent_framework_middleware` | construct with `policy=policy, log=audit_log` |
+| **LangGraph** | `fivedrisk_gate_node` | bind `policy` and `log` with `functools.partial` |
 | **Claude Code** | separate manual integration | reviewed host-specific guide, not included in the public artifact |
 | **Vercel AI SDK / Genkit** (Node) | `fivedrisk-gateway` npm pkg | `guardVercelTool` / `guardGenkitTool` |
 | **Custom Python** | `@gate` decorator | wrap a data-only execution boundary with `@gate(tool_name=...)` |
@@ -189,8 +193,11 @@ Validate after every edit:
 ```
 
 Treat warnings as unresolved configuration findings, even when validation exits zero.
-Point the adapter at the validated file or set `FIVEDRISK_POLICY_PATH`. Configure once at
-startup, before the first gated action. Python framework adapters always hold ORANGE:
+Load the validated policy explicitly with `load_policy(path)` and pass `policy=policy`
+to every library adapter. `FIVEDRISK_POLICY_PATH` is consumed by the packaged verifier,
+the simulated example, and the manual launcher; it is not an ambient configuration
+contract for framework factories or LangGraph. Configure once at startup, before the
+first gated action. Python framework adapters always hold ORANGE:
 the deprecated `has_approval_channel` flag is ignored because these hooks have no
 per-call approval exchange. Arrange human review in the host application; a static
 channel declaration never authorizes execution. Claude's native hook uses `ask`.
@@ -204,11 +211,15 @@ Verification must use the same interpreter, policy, adapter, and entrypoint as t
 The smoke check validates the policy contents when `FIVEDRISK_POLICY_PATH` is set:
 
 ```bash
-PYTHON_BIN="$PYTHON_BIN" bash "$SKILL_ROOT/scripts/verify-install.sh"
+FIVEDRISK_SURFACE=framework \
+  PYTHON_BIN="$PYTHON_BIN" bash "$SKILL_ROOT/scripts/verify-install.sh"
 ```
 
+Use the deployment's selected surface value rather than the example `framework`.
+
 ```bash
-"$PYTHON_BIN" -I "$SKILL_ROOT/scripts/example_gate.py"
+FIVEDRISK_AUDIT_PATH=/absolute/path/fivedrisk.db \
+  "$PYTHON_BIN" -I "$SKILL_ROOT/scripts/example_gate.py"
 ```
 
 The example simulates execution: it never launches the shell command. It must show one
@@ -217,13 +228,16 @@ real adapter with a harmless allowed call and a simulated denied call. Confirm b
 appear in the configured audit log:
 
 ```bash
-"$PYTHON_BIN" -I -m fivedrisk._bootstrap log --recent 20
-"$PYTHON_BIN" -I -m fivedrisk._bootstrap stats
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap --log-path /absolute/path/fivedrisk.db log --recent 20
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap --log-path /absolute/path/fivedrisk.db stats
 ```
 
 Do not use a live destructive command as a probe. A setup is verified only when the
 actual agent path blocks the denied case before its executor runs and records the
 decision. If any check fails, do not report a partial setup as complete.
+
+The packaged verifier requires Bash and a POSIX environment. Native Windows without
+WSL is outside the 0.7.1 script contract.
 
 ## Phase 4: Failure recovery
 

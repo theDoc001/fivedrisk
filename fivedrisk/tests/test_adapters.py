@@ -115,3 +115,18 @@ class TestToVerdict:
                 pol, session_id="adapters-drift",
             )
         assert "SafetyDrift" in last.reason
+
+    @pytest.mark.parametrize(
+        "policy",
+        [
+            Policy(identity_required=True),
+            Policy(retry_budget=1),
+            Policy(max_session_budget_tokens=10),
+            Policy(max_tool_call_budget_tokens=10),
+        ],
+    )
+    def test_shared_surface_fails_closed_on_unsupported_admission_controls(self, policy):
+        verdict = to_verdict("Read", {"file_path": "/tmp/a"}, policy)
+        assert verdict.band == "RED"
+        assert verdict.blocked is True
+        assert verdict.error_type == "UnsupportedPolicyControls"

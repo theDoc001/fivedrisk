@@ -27,12 +27,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from .classifier import classify_tool_call
+from .adapters import to_verdict
 from . import hooks as runtime_hooks
 from .logger import DecisionLog
 from .policy import Policy, load_policy
 from .schema import Band
-from .scorer import score
 
 
 def fivedrisk_gate_node(
@@ -80,7 +79,11 @@ def fivedrisk_gate_node(
             "fivedrisk_composite": None,
         }
 
-    destination_check = runtime_hooks.check_destination_policy(tool_name, tool_input)
+    destination_check = (
+        runtime_hooks.check_destination_policy(tool_name, tool_input)
+        if isinstance(tool_input, dict)
+        else None
+    )
     if destination_check and destination_check.decision == "block":
         return {
             **state,
@@ -91,30 +94,30 @@ def fivedrisk_gate_node(
             "fivedrisk_composite": None,
         }
 
-    action = classify_tool_call(
-        tool_name=tool_name,
-        tool_input=tool_input,
-        policy=policy,
-        autonomy_context=autonomy_context,
+    verdict = to_verdict(
+        tool_name,
+        tool_input,
+        policy,
+        session_id=session_id,
+        log=log,
+        autonomy=autonomy_context,
         source=source,
     )
-
-    result = score(action, policy)
-    if session_id:
-        runtime_hooks._apply_drift(result, session_id)
+    rationale = verdict.reason
     if destination_check and destination_check.decision == "warn":
-        result.rationale = (
-            f"{result.rationale} [DestinationPolicy: {destination_check.reason}]"
+        rationale = (
+            f"{rationale} [DestinationPolicy: {destination_check.reason}]"
         )
-    row_id = log.log(result)
 
     return {
         **state,
-        "fivedrisk_band": str(result.band),
-        "fivedrisk_score": result.to_dict(),
-        "fivedrisk_rationale": result.rationale,
-        "fivedrisk_log_id": row_id,
-        "fivedrisk_composite": result.composite_score,
+        "fivedrisk_band": verdict.band,
+        "fivedrisk_score": (
+            verdict.scored_action.to_dict() if verdict.scored_action is not None else None
+        ),
+        "fivedrisk_rationale": rationale,
+        "fivedrisk_log_id": verdict.audit_log_id,
+        "fivedrisk_composite": verdict.composite_score,
     }
 
 

@@ -45,8 +45,13 @@ Install the advisory setup skill directly from this public repository with the
 [Skills CLI](https://www.skills.sh/docs/cli):
 
 ```bash
-npx skills add theDoc001/fivedrisk --skill fivedrisk-setup
+git clone --branch v0.7.1 --depth 1 https://github.com/theDoc001/fivedrisk.git
+cd fivedrisk
+npx --yes skills@1.7.2 add . --skill fivedrisk-setup
 ```
+
+The packaged verifier and manual Claude hook commands require a POSIX environment with
+Bash. Native Windows without WSL is not supported by those scripts in 0.7.1.
 
 This installs the consultant skill. It does not install the Python runtime or
 activate a hook in the agent's execution path.
