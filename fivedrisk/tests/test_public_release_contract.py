@@ -229,6 +229,15 @@ def test_plugin_starter_policy_explicitly_uses_default_folded_yellow_behavior():
     assert score(moderate, policy).band is Band.YELLOW
 
 
+def test_readme_does_not_present_an_observer_as_a_shipped_default_route():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    opening = readme.split("## What it scores", 1)[0]
+
+    assert "YELLOW ─► LLM scanner" not in opening
+    assert "does not bundle or invoke a semantic scanner" in opening
+    assert "YELLOW is opt-in" in opening
+
+
 def test_openai_presentation_and_onboarding_are_complete_in_both_formats():
     root = ROOT / "fivedrisk-plugin"
     portable = json.loads((root / "plugin.json").read_text())

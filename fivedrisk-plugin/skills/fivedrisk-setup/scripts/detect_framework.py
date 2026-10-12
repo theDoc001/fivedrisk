@@ -1,8 +1,8 @@
 """detect_framework.py — tell the operator which 5D adapter to wire.
 
 Probes which agent frameworks are importable in the current environment and, for
-each, prints the matching fivedrisk adapter import + a one-line wiring snippet. No
-The script itself performs no intentional network access or writes. Python module
+each, prints the matching fivedrisk adapter import + a one-line wiring snippet. The
+script itself performs no intentional network access or writes. Python module
 discovery may import parent packages or invoke registered finder hooks. Frameworks that live in
 Node (Vercel AI SDK, Genkit) or are CLI-wired (Claude Code) are always listed with
 their non-Python wiring, since this Python probe can't see them.
