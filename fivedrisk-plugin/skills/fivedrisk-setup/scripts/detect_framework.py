@@ -55,13 +55,14 @@ ADAPTERS: List[Adapter] = [
             "# no import — separate manual host integration; public skill is advisory",
             "Review https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin/manual", node=True),
     Adapter("__vercel__", "Vercel AI SDK (Node)",
-            "// npm install fivedrisk-gateway",
+            'import { FivedriskGateway, guardVercelTool } from "fivedrisk-gateway";',
             f"const gw = new FivedriskGateway({{ command: {json.dumps(sys.executable)} }}); "
-            "guardVercelTool(gw, 'my_tool', tool)", node=True),
+            'const gatedTool = guardVercelTool(gw, "my_tool", tool);', node=True),
     Adapter("__genkit__", "Genkit (Node)",
-            "// npm install fivedrisk-gateway",
+            'import { FivedriskGateway, guardGenkitTool } from "fivedrisk-gateway";',
             f"const gw = new FivedriskGateway({{ command: {json.dumps(sys.executable)} }}); "
-            "ai.defineTool({name}, guardGenkitTool(gw, 'my_tool', handler))", node=True),
+            'ai.defineTool({ name: "my_tool" }, '
+            'guardGenkitTool(gw, "my_tool", handler));', node=True),
 ]
 
 

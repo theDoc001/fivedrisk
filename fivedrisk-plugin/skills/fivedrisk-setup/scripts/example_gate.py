@@ -3,7 +3,7 @@
 Run with the interpreter selected by the setup workflow:
     <SELECTED_PYTHON> -I <SKILL_ROOT>/scripts/example_gate.py
 
-Shows the four-band outcome in ~40 lines: a GREEN benign call that executes, a RED
+Shows the end-to-end gate outcome in ~40 lines: a GREEN benign call that executes, a RED
 destructive call that is blocked before it runs, the 5D rationale for each, and the
 last five audit-log rows. No LLM, no API key, no network. The executor is simulated
 (no real shell), so even a scoring regression can't delete anything.
