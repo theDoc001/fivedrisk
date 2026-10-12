@@ -543,7 +543,7 @@ fivedrisk's `ModelClass` is an abstraction over capability, not a model name. Op
 
 ## Benchmark and test suite
 
-fivedrisk ships with two reproducible measurement surfaces. Both are deterministic, safe to run in CI, and require no external API calls.
+fivedrisk ships with two offline, rerunnable measurement surfaces. Both are deterministic for the same code, inputs, interpreter, and resolved dependencies; neither requires external API calls.
 
 **Performance benchmark** (`python benchmarks/bench_minimal.py`): measures per-action latency across the core scoring path, scanners, drift accumulator, and audit-log I/O. Reports p50/p95/p99 over 2K to 10K samples per scenario. Produces the numbers in [Performance](#performance) below.
 
@@ -586,7 +586,7 @@ For the full coverage map across threat catalogues see [Coverage](#coverage).
 
 ## Performance
 
-Measured on Apple M1, single-thread. Numbers reproducible from `benchmarks/bench_minimal.py`.
+Measured on Apple M1, single-thread. Rerun `benchmarks/bench_minimal.py`; absolute numbers vary with hardware, interpreter, and resolved dependencies.
 
 | Operation | p50 | p95 | p99 |
 |---|---|---|---|
@@ -664,7 +664,7 @@ fivedrisk is one layer in a defence-in-depth AI governance stack. The runtime pr
 - **[MITRE ATLAS coverage](mitre-atlas-coverage.md)** — tactic and technique mapping against MITRE ATLAS.
 - **[Decision-log analysis cookbook](decision-log-cookbook.md)** — sample SQL queries against the audit log for common operational questions.
 
-Each coverage doc names which fivedrisk primitives address which threat class and is reproducible from the pytest marker suite.
+Each coverage doc names which fivedrisk primitives address which threat class and can be rerun from the pytest marker suite in a recorded environment.
 
 ---
 

@@ -80,6 +80,12 @@ raw system prompts merely to make the observer work.
 
 ## Security, latency, and compute claims
 
+Before enabling an observer, confirm and record its provider, exact model/version,
+execution locality, transmitted fields and redaction, retention/training policy, data
+residency, credential owner and storage, timeout, retry and failure disposition, plus
+latency, cost and availability objectives. An unresolved item is a deployment blocker,
+not an invitation to infer a convenient default.
+
 Deterministic-first routing can avoid a semantic inference call for non-routed actions.
 Routed actions add inference latency, compute, possible retries, and sometimes human
 review. Jev can batch independent questions, which may reduce request count. Do not claim

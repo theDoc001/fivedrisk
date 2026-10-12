@@ -111,3 +111,51 @@ observer:
     value: design_only
     basis: operator-stated
     confirmation_status: proposed
+  provider_model_version:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  execution_locality:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  transmitted_fields:
+    items: []
+    basis: unresolved
+    confirmation_status: unresolved
+  retention_training_policy:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  data_residency:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  credential_owner:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  credential_storage:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  timeout_seconds:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  retry_policy:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  latency_slo:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  cost_budget:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved
+  availability_slo:
+    value: null
+    basis: unresolved
+    confirmation_status: unresolved

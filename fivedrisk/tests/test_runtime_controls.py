@@ -132,6 +132,7 @@ class TestSessionRequirements:
         )
         assert result["decision"] == "block"
         assert "session id required" in result["reason"]
+        assert len(DecisionLog(tmp_path / "runtime-controls.db").query_recent(limit=10)) == 1
 
     def test_pre_tool_allows_when_session_required_and_present(self, tmp_path):
         _reset(tmp_path, require_session_id=True)
@@ -162,9 +163,29 @@ class TestSessionRequirements:
 
     def test_langgraph_blocks_when_session_required_and_missing(self, tmp_path):
         _reset(tmp_path, require_session_id=True)
-        state = fivedrisk_gate_node({"tool_name": "Read", "tool_input": {"file_path": "/tmp/a.txt"}})
+        log = DecisionLog(tmp_path / "runtime-controls.db")
+        state = fivedrisk_gate_node(
+            {"tool_name": "Read", "tool_input": {"file_path": "/tmp/a.txt"}},
+            log=log,
+        )
         assert state["fivedrisk_band"] == "RED"
         assert "session id required" in state["fivedrisk_rationale"]
+        assert state["fivedrisk_log_id"] is not None
+        assert len(log.query_recent(limit=10)) == 1
+
+    def test_langgraph_destination_denial_logs_once(self, tmp_path):
+        _reset(tmp_path, destination_denylist=["blocked.example"])
+        log = DecisionLog(tmp_path / "runtime-controls.db")
+        state = fivedrisk_gate_node(
+            {
+                "tool_name": "WebFetch",
+                "tool_input": {"url": "https://blocked.example/data"},
+            },
+            log=log,
+        )
+        assert state["fivedrisk_band"] == "RED"
+        assert state["fivedrisk_log_id"] is not None
+        assert len(log.query_recent(limit=10)) == 1
 
     def test_langgraph_uses_session_when_present(self, tmp_path):
         log = DecisionLog(tmp_path / "runtime-controls.db")

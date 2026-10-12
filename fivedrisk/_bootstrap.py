@@ -43,10 +43,22 @@ def main(argv: list[str] | None = None) -> int:
         print(f"fivedrisk bootstrap: {exc}; blocking", file=sys.stderr)
         return 2
 
+    gateway_args: list[str] | None = None
     if args and args[0] == "gateway":
+        gateway_args = args[1:]
+    else:
+        prefix: list[str] = []
+        index = 0
+        while index + 1 < len(args) and args[index] in {"--policy", "--log-path"}:
+            prefix.extend(args[index:index + 2])
+            index += 2
+        if index < len(args) and args[index] == "gateway":
+            gateway_args = [*args[index + 1:], *prefix]
+
+    if gateway_args is not None:
         from .gateway import main as gateway_main
 
-        return gateway_main(args[1:])
+        return gateway_main(gateway_args)
 
     from .cli import main as cli_main
 

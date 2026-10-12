@@ -406,38 +406,60 @@ class DecisionLog:
         reason: str,
         session_id: Optional[str] = None,
         source: str = "post-tool-egress",
+        config_hash: Optional[str] = None,
+        policy_preset: Optional[str] = None,
     ) -> int:
-        """M7: record a PostToolUse egress block in the audit trail.
+        """Record a terminal unscored block in the audit trail.
 
-        Egress blocks scan tool OUTPUT (there is no scored Action), so the
+        These rows cover output egress blocks and pre-score admission/input
+        denials (there is no scored Action), so the
         dimension scores are stored as 0 with band=RED and the block reason in
         `rationale` — enough for an operator to reconstruct why an output was
         blocked. Previously these blocks were returned to the caller but never
-        logged, so "audits every decision" did not hold for egress decisions.
+        logged, so "audits every decision" did not hold for early decisions.
         """
         from datetime import datetime, timezone
 
         with self._connect() as conn:
+            row = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "tool_name": tool_name,
+                "tool_input_hash": "",
+                "data_sensitivity": 0,
+                "tool_privilege": 0,
+                "reversibility": 0,
+                "external_impact": 0,
+                "autonomy_context": 0,
+                "composite_score": 0.0,
+                "max_dimension": 0,
+                "band": "RED",
+                "rationale": reason,
+                "source": source,
+                "outcome": "blocked",
+                "policy_version": "unscored",
+                "session_id": session_id,
+                "routing_model": None,
+                "routing_floor": None,
+                "metadata": None,
+                "fired_rule_id": None,
+                "floor_band": None,
+                "acting_principal_id": None,
+                "acting_principal_type": None,
+                "config_hash": config_hash,
+                "policy_preset": policy_preset,
+                "outcome_history": json.dumps(["blocked"]),
+            }
+            prev = conn.execute(
+                "SELECT record_hash FROM decisions WHERE record_hash IS NOT NULL "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            row["prev_hash"] = prev[0] if prev else None
+            row["record_hash"] = self._chain_hash(row["prev_hash"], row)
+            cols = list(row)
             cursor = conn.execute(
-                """
-                INSERT INTO decisions (
-                    timestamp, tool_name, tool_input_hash,
-                    data_sensitivity, tool_privilege, reversibility,
-                    external_impact, autonomy_context,
-                    composite_score, max_dimension, band,
-                    rationale, source, outcome, policy_version,
-                    session_id, routing_model, routing_floor, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    datetime.now(timezone.utc).isoformat(),
-                    tool_name,
-                    "",
-                    0, 0, 0, 0, 0,
-                    0.0, 0, "RED",
-                    reason, source, "blocked", "egress",
-                    session_id, None, None, None,
-                ),
+                f"INSERT INTO decisions ({', '.join(cols)}) "
+                f"VALUES ({', '.join('?' for _ in cols)})",
+                tuple(row[column] for column in cols),
             )
             return cursor.lastrowid  # type: ignore[return-value]
 

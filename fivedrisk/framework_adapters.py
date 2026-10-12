@@ -63,11 +63,18 @@ def _gate_decision(
     object. Wrapping a hostile non-dict payload under a synthetic key would hide
     it from the classifier and demote a stop into a go (QA-M1 finding).
     """
+    effective_policy = policy or Policy()
+
     def session_failure(reason: str, error_type: str) -> _GateDecision:
         effective_log = log or DecisionLog()
         logged_name = tool_name if isinstance(tool_name, str) and tool_name.strip() else "Unknown"
         row_id = effective_log.log_egress_block(
-            logged_name, reason, None, source=f"{source}-session-error"
+            logged_name,
+            reason,
+            None,
+            source=f"{source}-session-error",
+            config_hash=effective_policy.content_hash(),
+            policy_preset=effective_policy.preset_name,
         )
         verdict = Verdict(
             band="RED", sentinel="block", blocked=True, reason=reason,
@@ -97,7 +104,7 @@ def _gate_decision(
         )
 
     verdict = to_verdict(
-        tool_name, tool_input, policy,
+        tool_name, tool_input, effective_policy,
         session_id=resolved_session_id, log=log, autonomy=autonomy, source=source,
     )
     block = sentinel_blocks(verdict.sentinel, has_approval_channel=has_approval_channel)
