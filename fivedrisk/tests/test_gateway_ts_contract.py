@@ -101,6 +101,27 @@ def test_documented_isolated_one_shot_gateway_command_runs():
     assert response["band"] == "RED"
 
 
+def test_documented_options_first_gateway_command_runs(tmp_path):
+    policy = tmp_path / "policy.yaml"
+    policy.write_text("version: 1\n", encoding="utf-8")
+    audit = tmp_path / "decisions.db"
+    request = json.dumps({
+        "id": "configured", "tool_name": "Read", "params": {"file_path": "/tmp/a"},
+    }) + "\n"
+    proc = subprocess.run(
+        [
+            sys.executable, "-I", "-m", "fivedrisk._bootstrap",
+            "--policy", str(policy), "--log-path", str(audit),
+            "gateway", "score",
+        ],
+        input=request, capture_output=True, text=True, timeout=30,
+    )
+    assert proc.returncode == 0, proc.stderr
+    response = json.loads(proc.stdout)
+    assert response["band"] == "GREEN"
+    assert audit.is_file()
+
+
 def test_isolated_gateway_bootstrap_ignores_hostile_cwd_and_pythonpath(tmp_path):
     marker = tmp_path / "shadow-ran"
     shadow = tmp_path / "fivedrisk"

@@ -152,6 +152,13 @@ def test_skill_shell_examples_do_not_use_angle_bracket_assignments():
     assert "FIVEDRISK_SURFACE=<" not in skill
 
 
+def test_public_presets_do_not_document_removed_configure_arguments():
+    preset = (
+        ROOT / "fivedrisk" / "policies" / "presets" / "customer_data.yaml"
+    ).read_text(encoding="utf-8")
+    assert "enforce_destination_policy" not in preset
+
+
 def test_python_ci_exercises_the_noneditable_installed_distribution():
     workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(
         encoding="utf-8"
@@ -322,7 +329,7 @@ def test_openai_presentation_and_onboarding_are_complete_in_both_formats():
 
 def test_publisher_builds_both_plugin_variants_before_checksums_and_attestation():
     publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text()
-    build = _workflow_run_block(publish, "Build one reproducible, checksum-verified artifact set")
+    build = _workflow_run_block(publish, "Build one source-bound, checksum-verified artifact set")
     assert build.count('--git-ref "$GITHUB_SHA"') == 2
     for variant in ("public", "manual"):
         assert f"--variant {variant}" in build
@@ -330,6 +337,28 @@ def test_publisher_builds_both_plugin_variants_before_checksums_and_attestation(
     assert build.index("--variant manual") < build.index("tools/artifact_checksums.py --write")
     assert 'subject-path: "dist/*"' in publish
     assert 'gh release create "v$VERSION" dist/*' in publish
+
+
+def test_external_github_actions_are_pinned_to_full_commit_shas():
+    offenders = []
+    for workflow in (ROOT / ".github" / "workflows").glob("*.yml"):
+        for line in workflow.read_text(encoding="utf-8").splitlines():
+            match = re.search(r"\buses:\s*([^\s#]+)", line)
+            if not match or match.group(1).startswith("./"):
+                continue
+            reference = match.group(1).rsplit("@", 1)[-1]
+            if not re.fullmatch(r"[0-9a-f]{40}", reference):
+                offenders.append(f"{workflow.name}: {line.strip()}")
+    assert not offenders, f"mutable external action refs: {offenders}"
+
+
+def test_public_reproducibility_claims_are_bounded():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    controls = (ROOT / "docs" / "release-controls.md").read_text(encoding="utf-8")
+    requirements = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
+    assert "two reproducible measurement surfaces" not in readme
+    assert "one reproducible artifact set" not in controls
+    assert "NOT A COMPLETE LOCK" in requirements
 
 
 def test_typescript_readme_exports_a_canonical_absolute_interpreter():
@@ -390,12 +419,12 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     assert "tools/normalize_sdist.py" in publish
     assert "tools/build_plugin_archive.py" in publish
     assert '--git-ref "$GITHUB_SHA"' in publish
-    assert "actions/attest-build-provenance@v2" in publish
+    assert "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be" in publish
     assert publish.index("--action package-publish") < publish.index(
         "pypa/gh-action-pypi-publish"
     )
     assert publish.index("--action attestation") < publish.index(
-        "actions/attest-build-provenance@v2"
+        "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be"
     )
     assert publish.index("--action tag") < publish.index('git push origin "v$VERSION"')
     assert publish.index("--action github-release") < publish.index("gh release create")
@@ -533,7 +562,7 @@ def test_benchmark_workflow_pairs_frozen_base_and_candidate():
     assert "--runs 1 --json" in bench
     assert "aggregate_paired_results.py" in bench
     assert "check_regression.py" in bench
-    assert "actions/upload-artifact@v4" in bench
+    assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in bench
     assert 'cp "$BASE_TREE/benchmarks/bench_ci.py"' in bench
     assert 'cp "$BASE_TREE/benchmarks/check_regression.py"' in bench
     assert 'cp "$BASE_TREE/benchmarks/aggregate_paired_results.py"' in bench

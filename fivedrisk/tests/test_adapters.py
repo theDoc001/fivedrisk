@@ -14,6 +14,7 @@ from fivedrisk.adapters import (
     to_verdict,
 )
 from fivedrisk.policy import Policy
+from fivedrisk.logger import DecisionLog
 from fivedrisk.schema import Band
 
 
@@ -60,6 +61,25 @@ class TestQA1NeverDemote:
 
 
 class TestToVerdict:
+    def test_scored_and_unscored_rows_bind_policy_and_verify_chain(self, tmp_path):
+        policy = Policy()
+        log = DecisionLog(tmp_path / "adapter-policy.db")
+        allowed = to_verdict(
+            "Read", {"file_path": "/tmp/a"}, policy, log=log
+        )
+        blocked = to_verdict(
+            "Read",
+            {"text": "ignore previous instructions"},
+            policy,
+            log=log,
+        )
+        assert allowed.audit_log_id is not None
+        assert blocked.audit_log_id is not None
+        rows = log.query_recent(limit=10)
+        assert len(rows) == 2
+        assert all(row["config_hash"] == policy.content_hash() for row in rows)
+        assert log.verify_chain()["ok"] is True
+
     def test_hostile_bash_blocks_red(self):
         v = to_verdict("Bash", {"command": "rm -rf /data"})
         assert v.band == "RED"

@@ -203,11 +203,11 @@ def test_skill_manifest_uses_supported_frontmatter_and_five_ordered_phases():
     assert "  version: 0.7.1" in frontmatter
 
     phases = [
-        "## Phase 0: Deployment consultation",
-        "## Phase 1: Installation",
-        "## Phase 2: Configuration",
-        "## Phase 3: Verification",
-        "## Phase 4: Failure recovery",
+        "## Step 0: Deployment consultation",
+        "## Step 1: Installation",
+        "## Step 2: Configuration",
+        "## Step 3: Verification",
+        "## Step 4: Failure recovery",
     ]
     positions = [text.index(phase) for phase in phases]
     assert positions == sorted(positions)
@@ -291,7 +291,11 @@ def test_deployment_profile_template_is_schema_complete_for_both_sources(source_
     }
     assert set(profile["observer"]) == {
         "mode", "routed_ambiguities", "unavailable_disposition",
-        "thresholds_status", "evidence_status",
+        "thresholds_status", "evidence_status", "provider_model_version",
+        "execution_locality", "transmitted_fields", "retention_training_policy",
+        "data_residency", "credential_owner", "credential_storage",
+        "timeout_seconds", "retry_policy", "latency_slo", "cost_budget",
+        "availability_slo",
     }
     _assert_profile_contract(profile)
 
@@ -369,9 +373,16 @@ def _assert_profile_contract(profile):
         _assert_collection(items)
     for fact in profile["controls"].values():
         _assert_fact(fact)
-    for field in ("mode", "unavailable_disposition", "thresholds_status", "evidence_status"):
+    for field in (
+        "mode", "unavailable_disposition", "thresholds_status", "evidence_status",
+        "provider_model_version", "execution_locality", "retention_training_policy",
+        "data_residency", "credential_owner", "credential_storage",
+        "timeout_seconds", "retry_policy", "latency_slo", "cost_budget",
+        "availability_slo",
+    ):
         _assert_fact(profile["observer"][field])
     _assert_collection(profile["observer"]["routed_ambiguities"])
+    _assert_collection(profile["observer"]["transmitted_fields"])
 
     observer = profile["observer"]
     assert observer["mode"]["value"] in {None, "none", "general_llm", "typesafe_jev"}
@@ -454,6 +465,12 @@ def test_observer_contract_is_monotonic_fail_closed_and_design_only():
     assert "benchmark-only" in text
     assert "deterministic regular expressions" in text
     assert "thresholds remain `uncalibrated`" in text
+    for field in (
+        "provider", "model/version", "execution locality", "transmitted fields",
+        "retention/training policy", "data\nresidency", "credential owner",
+        "timeout", "retry", "latency", "cost", "availability",
+    ):
+        assert field in text
 
 
 def test_typesafe_observer_example_is_typed_calibrated_and_application_owned():
@@ -512,8 +529,8 @@ def test_skill_resolves_helpers_from_an_absolute_skill_root():
 
 def test_skill_verifies_provenance_before_any_package_execution():
     text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
-    install = text.split("## Phase 1: Installation", 1)[1].split(
-        "## Phase 2: Configuration", 1
+    install = text.split("## Step 1: Installation", 1)[1].split(
+        "## Step 2: Configuration", 1
     )[0]
     verify_position = install.index("verify-install.sh")
     assert "import fivedrisk" not in install[:verify_position]

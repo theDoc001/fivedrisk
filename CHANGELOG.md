@@ -49,7 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   static or free data-only boundary function instead. Bash gates additionally require
   one exact built-in string `command`; argv lists/tuples and variadic forms fail closed.
 - The setup verifier proves distribution/spec provenance in isolated mode without
-  importing package code first. It is safe and reproducible from a source checkout,
+  importing package code first. It is safe and rerunnable from a source checkout,
   neutral directory, or hostile cwd/PYTHONPATH.
 - Every independent public install/quickstart workflow now performs the same
   standard-library-only isolated provenance check before its first package import or
@@ -78,7 +78,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   logic. A fresh-clone installer activates and verifies the tracked hook, and managed
   GitHub rulesets protect the default branch and make release tags immutable.
 - Publication now runs the TypeScript release gate, emits verifiable root-relative
-  checksums, normalizes source-distribution metadata, attests one reproducible artifact
+  checksums, normalizes source-distribution metadata, attests one source-bound artifact
   set (including both exact versioned public/manual plugin ZIPs) to the cleared commit, and safely
   resumes only matching partial PyPI/tag/GitHub release states. Conflicts fail closed.
 - Scheduled publication binds the cleared commit to the actual workflow commit and
@@ -104,6 +104,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Public gateway commands use the provenance-checking bootstrap correctly, and the
   public candidate manifest is restricted to reviewed release files. A stale internal
   architecture/backlog artifact and its runtime provenance labels are excluded.
+- The bootstrap accepts both gateway-first and documented global-options-first gateway
+  commands. Protocol 1 rejects explicit null/non-object tool inputs and non-string trace
+  identifiers before scoring.
+- Python `@gate` now applies the same pure injection and configured semantic-review scan
+  used by shared adapters without bypassing its identity, session, budget, retry, or
+  destination controls. Sync and async scan denials stop before execution and cancel any
+  pending budget reservation.
+- Agent SDK malformed inputs fail closed instead of raising into host-dependent exception
+  handling. Every early terminal denial on `@gate`, the SDK hook, framework session
+  resolution, and LangGraph writes one policy-bound, hash-chained audit row.
+- The sensitive-data preset no longer documents the removed destination-enforcement flag.
+  Observer intake now records provider/model, data-transfer and retention boundaries,
+  credentials, timeouts/retries, and latency/cost/availability objectives.
+- External GitHub Actions, including release publishers and provenance attestation, are
+  pinned to reviewed full commit SHAs. Documentation distinguishes source-bound,
+  checksummed artifacts and rerunnable measurements from a fully hash-locked environment.
 - The repository README no longer advertises a hand-maintained test count.
 
 ## [0.7.0] - 2026-09-14

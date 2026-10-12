@@ -132,6 +132,36 @@ def test_score_action_dict_non_dict_params(policy, log):
     assert decision["error_type"] == "InvalidRequest"
 
 
+def test_score_action_dict_rejects_explicit_null_params(policy, log):
+    decision = gateway.score_action_dict(
+        {"tool_name": "Bash", "params": None}, policy, log=log
+    )
+    assert decision["error_type"] == "InvalidRequest"
+    assert "JSON object" in decision["error"]
+
+
+def test_score_action_dict_rejects_explicit_null_tool_input_alias(policy, log):
+    decision = gateway.score_action_dict(
+        {"tool_name": "Bash", "tool_input": None}, policy, log=log
+    )
+    assert decision["error_type"] == "InvalidRequest"
+    assert "JSON object" in decision["error"]
+
+
+@pytest.mark.parametrize(
+    "field", ["agent_id", "run_id", "trace_id", "span_id", "parent_span_id"]
+)
+@pytest.mark.parametrize("bad_value", [True, 1, [], {}])
+def test_score_action_dict_rejects_non_string_trace_fields(
+    policy, log, field, bad_value
+):
+    decision = gateway.score_action_dict(
+        {"tool_name": "Read", "params": {}, field: bad_value}, policy, log=log
+    )
+    assert decision["error_type"] == "InvalidRequest"
+    assert field in decision["error"]
+
+
 @pytest.mark.parametrize("bad_name", [True, False, 0, 1, [], {}, "", "  "])
 def test_score_action_dict_rejects_non_exact_or_empty_tool_name(policy, log, bad_name):
     decision = gateway.score_action_dict(

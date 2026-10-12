@@ -20,8 +20,7 @@ from .classifier import classify_tool_call
 from .hooks import (
     _apply_drift,
     _flatten_semantic_review_patterns,
-    scan_input_for_injection,
-    scan_semantic_review,
+    _scan_tool_input,
 )
 from .logger import DecisionLog
 from .policy import Policy
@@ -144,7 +143,12 @@ def to_verdict(
         logged_name = tool_name if isinstance(tool_name, str) and tool_name.strip() else "Unknown"
         logged_session_id = session_id if type(session_id) is str else None
         row_id = log.log_egress_block(
-            logged_name, reason, logged_session_id, source=f"{source}-error"
+            logged_name,
+            reason,
+            logged_session_id,
+            source=f"{source}-error",
+            config_hash=policy.content_hash(),
+            policy_preset=policy.preset_name,
         )
         return Verdict(
             band="RED", sentinel=BLOCK, blocked=True, reason=reason,
@@ -202,23 +206,23 @@ def to_verdict(
         )
 
     # Pre-score input layers: injection scan, then policy-driven semantic review.
-    input_text = str(tool_input)
-    raw_reason: Optional[str] = None
-    injection = scan_input_for_injection(input_text, source=f"tool:{tool_name}")
-    if injection:
-        raw_reason = f"injection detected in tool input: {injection}"
-    else:
-        semantic = scan_semantic_review(
-            input_text,
-            patterns=_flatten_semantic_review_patterns(policy.semantic_review_patterns),
-        )
-        if semantic:
-            raw_reason = f"semantic review required: {semantic}"
-    if raw_reason:
+    scan_finding = _scan_tool_input(
+        tool_name,
+        tool_input,
+        _flatten_semantic_review_patterns(policy.semantic_review_patterns),
+    )
+    if scan_finding:
+        raw_reason = scan_finding[1]
         if log is None:
             log = DecisionLog()
-        row_id = log.log_egress_block(tool_name, raw_reason, session_id,
-                                      source=f"{source}-input-block")
+        row_id = log.log_egress_block(
+            tool_name,
+            raw_reason,
+            session_id,
+            source=f"{source}-input-block",
+            config_hash=policy.content_hash(),
+            policy_preset=policy.preset_name,
+        )
         return Verdict(
             band="RED", sentinel=BLOCK, blocked=True,
             reason=f"5D input block: {raw_reason}", pre_score_block=True,
@@ -249,7 +253,11 @@ def to_verdict(
 
     if log is None:
         log = DecisionLog()
-    row_id = log.log(scored)
+    row_id = log.log(
+        scored,
+        config_hash=policy.content_hash(),
+        policy_preset=policy.preset_name,
+    )
 
     sentinel = band_to_sentinel(scored.band)
     return Verdict(

@@ -2,7 +2,7 @@
 
 A deployment consultant for per-action AI-agent risk governance. Start with a redacted
 system prompt or a description of the agent's goals and likely actions. The skill helps
-you confirm deployment facts, design a 5D profile, compare deterministic-only governance
+you confirm deployment facts, design a five-dimensional risk profile, compare deterministic-only governance
 with observer-LLM or TypeSafe Jev designs, configure a supported runtime adapter, and
 verify the real execution boundary. The profile is not runtime configuration, and no
 observer runtime is bundled.
@@ -59,7 +59,7 @@ activate a hook in the agent's execution path.
 After installing the advisory package in a compatible host, run its setup action or ask:
 “Use fivedrisk-setup to design a 5D risk profile for my agent.” Provide only a redacted
 prompt or goals/boundaries description—never credentials, customer data, or unnecessary
-proprietary content. Confirm the extracted facts before generating runtime policy.
+confidential content. Confirm the extracted facts before generating runtime policy.
 
 For manual hook installation, review `manual/README.md` inside the manual ZIP or the
 [manual integration guide](https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin/manual).

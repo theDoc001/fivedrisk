@@ -64,3 +64,15 @@ observer:
   unavailable_disposition: {value: block, basis: operator-stated, confirmation_status: confirmed}
   thresholds_status: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}
   evidence_status: {value: design_only, basis: operator-stated, confirmation_status: confirmed}
+  provider_model_version: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}
+  execution_locality: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}
+  transmitted_fields: {items: [], basis: operator-stated, confirmation_status: confirmed}
+  retention_training_policy: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}
+  data_residency: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}
+  credential_owner: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}
+  credential_storage: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}
+  timeout_seconds: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}
+  retry_policy: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}
+  latency_slo: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}
+  cost_budget: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}
+  availability_slo: {value: not_applicable, basis: operator-stated, confirmation_status: confirmed}

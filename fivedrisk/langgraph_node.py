@@ -70,12 +70,21 @@ def fivedrisk_gate_node(
             break
 
     if runtime_hooks.session_id_conventions()["require_session_id"] and session_id is None:
+        reason = "5D session id required for runtime integration"
+        row_id = log.log_egress_block(
+            tool_name,
+            reason,
+            None,
+            source="langgraph-session-block",
+            config_hash=policy.content_hash(),
+            policy_preset=policy.preset_name,
+        )
         return {
             **state,
             "fivedrisk_band": str(Band.RED),
-            "fivedrisk_rationale": "5D session id required for runtime integration",
+            "fivedrisk_rationale": reason,
             "fivedrisk_score": None,
-            "fivedrisk_log_id": None,
+            "fivedrisk_log_id": row_id,
             "fivedrisk_composite": None,
         }
 
@@ -85,12 +94,20 @@ def fivedrisk_gate_node(
         else None
     )
     if destination_check and destination_check.decision == "block":
+        row_id = log.log_egress_block(
+            tool_name,
+            destination_check.reason,
+            session_id,
+            source="langgraph-input-block",
+            config_hash=policy.content_hash(),
+            policy_preset=policy.preset_name,
+        )
         return {
             **state,
             "fivedrisk_band": str(Band.RED),
             "fivedrisk_rationale": destination_check.reason,
             "fivedrisk_score": None,
-            "fivedrisk_log_id": None,
+            "fivedrisk_log_id": row_id,
             "fivedrisk_composite": None,
         }
 
