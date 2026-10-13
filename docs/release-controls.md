@@ -25,7 +25,7 @@ python3 -I tools/repository_rulesets.py --check --repository theDoc001/fivedrisk
 ```
 
 These rules require pull requests and the release-window, Python, and TypeScript checks
-on the default branch, and make `v*` tags immutable after creation. The scheduled
+on the default branch, and make `v*` tags immutable after creation. The on-demand
 publisher binds the merged default-branch commit to the independently cleared
 candidate commit and tree, builds one source-bound, normalized artifact set, includes both
 `fivedrisk-plugin-public-0.7.1.zip` (hooks-free advisory directory candidate) and
@@ -44,10 +44,15 @@ The workflow records checksums and provenance for that exact build. It does not 
 bit-for-bit environment reproducibility: Python dependency ranges are resolved when the
 job runs, while external GitHub Actions are pinned to reviewed full commit SHAs.
 
-Publication has no manual workflow trigger. Two UTC schedules cover the Europe/Tirane
-DST variants; one becomes the active 19:05 local slot and the other exits without
-building or mutating. After a release converges, retire its schedules in a separate
-gated cleanup pull request before any later change reaches the default branch.
+Publication is on demand only. The workflow has no schedule or cron trigger and must
+remain disabled unless an approved release is ready. During an open publication
+window, the repository owner may enable it and explicitly dispatch it from `main`
+with the full approved candidate commit SHA. The workflow accepts only the repository
+owner as both actor and triggering actor, requires the supplied SHA to match the
+release and QA bindings, and rechecks the release window before work begins and before
+each external mutation. Enabling the manual-only workflow schedules nothing. After a
+release converges, disable the workflow again. A dispatch does not replace fresh QA,
+explicit human approval, or the exact candidate SHA and tree bindings.
 
 GitHub rulesets cannot prevent an already-authorized credential from pushing an
 ordinary non-protected branch. The pre-push hook prevents that for conforming agents.

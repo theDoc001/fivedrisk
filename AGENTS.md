@@ -35,3 +35,11 @@ An open window permits timing only. It does not replace release approval, requir
 tests, repository protections, or other release checks. Fail closed when any required
 check is missing or disagrees. The repository rulesets described in
 `docs/release-controls.md` are mandatory for the protected branch and release tags.
+
+Publication is on demand only. Never add a scheduled publisher, publication cron
+trigger, or recurring automation capable of publishing. Keep the publisher workflow
+disabled unless an exact release candidate has current QA clearance and explicit
+human approval. During an open window, re-run the gate immediately before enabling
+and explicitly dispatching the workflow, and supply the full approved candidate SHA.
+Disable the workflow again after release-state convergence. The dispatch input and an
+open window do not replace any approval, QA, SHA, tree, or repository protection.
