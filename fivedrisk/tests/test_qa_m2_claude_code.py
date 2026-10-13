@@ -18,6 +18,7 @@ and forces this test to be updated (a live regression tripwire).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 
@@ -62,10 +63,13 @@ PYEXE = sys.executable
 CLI_ROOT = None  # resolved lazily; module is importable from dev/
 
 
-def _run_cli(payload: dict, *extra):
+def _run_cli(payload: dict, *extra, cwd):
+    env = os.environ.copy()
+    env.pop("FIVEDRISK_AUDIT_PATH", None)
     proc = subprocess.run(
         [PYEXE, "-m", "fivedrisk", "claude-hook", *extra],
         input=json.dumps(payload), capture_output=True, text=True,
+        cwd=cwd, env=env,
     )
     return proc
 
@@ -270,56 +274,59 @@ class TestInvariant2_EgressScan:
 # CLI claude-hook end-to-end.
 class TestInvariant3_CLI:
 
-    def test_benign_pre_allows_exit0(self):
+    def test_benign_pre_allows_exit0(self, tmp_path):
         p = _run_cli({"hook_event_name": "PreToolUse", "tool_name": "Read",
                       "tool_input": {"file_path": "/tmp/a"}, "session_id": "s"},
-                     "--dry-run")
+                     "--dry-run", cwd=tmp_path)
         assert p.returncode == 0
         out = json.loads(p.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
 
-    def test_hostile_pre_denies_exit0(self):
+    def test_hostile_pre_denies_exit0(self, tmp_path):
         p = _run_cli({"hook_event_name": "PreToolUse", "tool_name": "Bash",
-                      "tool_input": {"command": "rm -rf /data"}}, "--dry-run")
+                      "tool_input": {"command": "rm -rf /data"}}, "--dry-run",
+                     cwd=tmp_path)
         assert p.returncode == 0
         out = json.loads(p.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
-    def test_post_leak_blocks(self):
+    def test_post_leak_blocks(self, tmp_path):
         p = _run_cli({"hook_event_name": "PostToolUse", "tool_name": "Read",
-                      "tool_output": "password=hunter2"})
+                      "tool_output": "password=hunter2"}, cwd=tmp_path)
         assert p.returncode == 0
         out = json.loads(p.stdout)
         assert out["decision"] == "block"
 
-    def test_post_clean_allows(self):
+    def test_post_clean_allows(self, tmp_path):
         p = _run_cli({"hook_event_name": "PostToolUse", "tool_name": "Read",
-                      "tool_output": "clean data"})
+                      "tool_output": "clean data"}, cwd=tmp_path)
         assert p.returncode == 0
         out = json.loads(p.stdout)
         assert out["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
 
-    def test_missing_event_defaults_to_pre(self):
+    def test_missing_event_defaults_to_pre(self, tmp_path):
         # No hook_event_name -> must route to PreToolUse (deny-capable gate),
         # NOT silently into the post scanner.
         p = _run_cli({"tool_name": "Bash",
-                      "tool_input": {"command": "rm -rf /data"}}, "--dry-run")
+                      "tool_input": {"command": "rm -rf /data"}}, "--dry-run",
+                     cwd=tmp_path)
         assert p.returncode == 0
         out = json.loads(p.stdout)
         assert out["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
         assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
-    def test_event_routing_pre_not_scanned_as_post(self):
+    def test_event_routing_pre_not_scanned_as_post(self, tmp_path):
         # A PreToolUse payload whose tool_input text looks leaky must be scored
         # by the gate (allow/ask/deny), never routed into the egress scanner.
         p = _run_cli({"hook_event_name": "PreToolUse", "tool_name": "Read",
-                      "tool_input": {"file_path": "/tmp/x"}}, "--dry-run")
+                      "tool_input": {"file_path": "/tmp/x"}}, "--dry-run",
+                     cwd=tmp_path)
         out = json.loads(p.stdout)
         assert out["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
 
-    def test_output_is_valid_json(self):
+    def test_output_is_valid_json(self, tmp_path):
         p = _run_cli({"hook_event_name": "PreToolUse", "tool_name": "Read",
-                      "tool_input": {}}, "--dry-run")
+                      "tool_input": {}}, "--dry-run", cwd=tmp_path)
         json.loads(p.stdout)  # raises if malformed
 
 

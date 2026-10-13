@@ -25,7 +25,7 @@ def _run_gateway(requests):
         audit = Path(temp) / "decisions.db"
         proc = subprocess.Popen(
             [
-                sys.executable, "-I", "-m", "fivedrisk._bootstrap",
+                sys.executable, "-B", "-I", "-m", "fivedrisk._bootstrap",
                 "gateway", "stdio", "--log-path", str(audit),
             ],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -102,7 +102,7 @@ def test_documented_isolated_one_shot_gateway_command_runs(tmp_path):
     }) + "\n"
     proc = subprocess.run(
         [
-            sys.executable, "-I", "-m", "fivedrisk._bootstrap", "gateway", "score",
+            sys.executable, "-B", "-I", "-m", "fivedrisk._bootstrap", "gateway", "score",
             "--log-path", str(tmp_path / "one-shot.db"),
         ],
         input=request, capture_output=True, text=True, timeout=30,
@@ -121,7 +121,7 @@ def test_documented_options_first_gateway_command_runs(tmp_path):
     }) + "\n"
     proc = subprocess.run(
         [
-            sys.executable, "-I", "-m", "fivedrisk._bootstrap",
+            sys.executable, "-B", "-I", "-m", "fivedrisk._bootstrap",
             "--policy", str(policy), "--log-path", str(audit),
             "gateway", "score",
         ],
@@ -145,7 +145,7 @@ def test_isolated_gateway_bootstrap_ignores_hostile_cwd_and_pythonpath(tmp_path)
     env = {**os.environ, "PYTHONPATH": str(tmp_path)}
     proc = subprocess.Popen(
         [
-            sys.executable, "-I", "-m", "fivedrisk._bootstrap", "gateway", "stdio",
+            sys.executable, "-B", "-I", "-m", "fivedrisk._bootstrap", "gateway", "stdio",
             "--log-path", str(tmp_path / "hostile-cwd.db"),
         ],
         cwd=tmp_path, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,

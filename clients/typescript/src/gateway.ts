@@ -106,7 +106,7 @@ const SCORE_KEYS = [
   "external_impact",
   "autonomy_context",
 ] as const;
-const ISOLATED_GATEWAY_ARGS = ["-I", "-m", "fivedrisk._bootstrap", "gateway", "stdio"];
+const ISOLATED_GATEWAY_ARGS = ["-B", "-I", "-m", "fivedrisk._bootstrap", "gateway", "stdio"];
 const LEGACY_GATEWAY_ARGS = ["-m", "fivedrisk", "gateway", "stdio"];
 
 function sameArgs(left: string[], right: string[]): boolean {
