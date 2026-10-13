@@ -27,7 +27,7 @@ python3 -I tools/repository_rulesets.py --check --repository theDoc001/fivedrisk
 These rules require pull requests and the release-window, Python, and TypeScript checks
 on the default branch, and make `v*` tags immutable after creation. The scheduled
 publisher binds the merged default-branch commit to the independently cleared
-candidate commit and tree, builds one reproducible artifact set, includes both
+candidate commit and tree, builds one source-bound, normalized artifact set, includes both
 `fivedrisk-plugin-public-0.7.1.zip` (hooks-free advisory directory candidate) and
 `fivedrisk-plugin-manual-0.7.1.zip` (reviewed Claude-specific local integration), emits a
 root-relative `SHA256SUMS`, creates GitHub build provenance attestations, and reconciles
@@ -39,6 +39,10 @@ The checksum and remote-state checks require both exact versioned ZIP names, the
 and the source distribution. Hook-containing ZIPs are not directory eligible. The
 public ZIP must be built with `--variant public --git-ref <cleared-commit>`; do not upload
 the manual ZIP or the complete source directory to a public plugin portal.
+
+The workflow records checksums and provenance for that exact build. It does not claim
+bit-for-bit environment reproducibility: Python dependency ranges are resolved when the
+job runs, while external GitHub Actions are pinned to reviewed full commit SHAs.
 
 Publication has no manual workflow trigger. Two UTC schedules cover the Europe/Tirane
 DST variants; one becomes the active 19:05 local slot and the other exits without

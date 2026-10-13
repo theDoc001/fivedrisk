@@ -2,7 +2,7 @@
 
 A deployment consultant for per-action AI-agent risk governance. Start with a redacted
 system prompt or a description of the agent's goals and likely actions. The skill helps
-you confirm deployment facts, design a 5D profile, compare deterministic-only governance
+you confirm deployment facts, design a five-dimensional risk profile, compare deterministic-only governance
 with observer-LLM or TypeSafe Jev designs, configure a supported runtime adapter, and
 verify the real execution boundary. The profile is not runtime configuration, and no
 observer runtime is bundled.
@@ -41,10 +41,25 @@ settings. Both identify the same one auto-discovered skill: `fivedrisk-setup`.
 
 ## Start the consultation
 
+Install the advisory setup skill directly from this public repository with the
+[Skills CLI](https://www.skills.sh/docs/cli):
+
+```bash
+git clone --branch v0.7.1 --depth 1 https://github.com/theDoc001/fivedrisk.git
+cd fivedrisk
+npx --yes skills@1.7.2 add . --skill fivedrisk-setup
+```
+
+The packaged verifier and manual Claude hook commands require a POSIX environment with
+Bash. Native Windows without WSL is not supported by those scripts in 0.7.1.
+
+This installs the consultant skill. It does not install the Python runtime or
+activate a hook in the agent's execution path.
+
 After installing the advisory package in a compatible host, run its setup action or ask:
 “Use fivedrisk-setup to design a 5D risk profile for my agent.” Provide only a redacted
 prompt or goals/boundaries description—never credentials, customer data, or unnecessary
-proprietary content. Confirm the extracted facts before generating runtime policy.
+confidential content. Confirm the extracted facts before generating runtime policy.
 
 For manual hook installation, review `manual/README.md` inside the manual ZIP or the
 [manual integration guide](https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin/manual).

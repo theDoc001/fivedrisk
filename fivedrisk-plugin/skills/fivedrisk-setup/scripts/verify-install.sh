@@ -6,13 +6,20 @@
 #   2. metadata/spec provenance resolves to a regular installed distribution
 #      without executing package code
 #   3. the CLI responds through the selected interpreter in isolated mode
-#   4. (optional) a policy file at $FIVEDRISK_POLICY_PATH exists and is readable
+#   4. the selected $FIVEDRISK_SURFACE is checked for policy compatibility
+#   5. (optional) a policy file at $FIVEDRISK_POLICY_PATH exists and is readable
 #
 # Exits 0 on success, non-zero on the first hard failure.
 
 set -u
 
 : "${PYTHON_BIN:?Set PYTHON_BIN to the selected project interpreter}"
+: "${FIVEDRISK_SURFACE:?Set FIVEDRISK_SURFACE to gate, framework, gateway, langgraph, or sdk-hook}"
+
+case "$FIVEDRISK_SURFACE" in
+    gate|framework|gateway|langgraph|sdk-hook) ;;
+    *) printf 'FAIL: invalid FIVEDRISK_SURFACE (%s)\n' "$FIVEDRISK_SURFACE" >&2; exit 1 ;;
+esac
 
 EXIT_CODE=0
 fail() { printf 'FAIL: %s\n' "$1" >&2; EXIT_CODE=1; }
@@ -103,7 +110,7 @@ validate_policy() {
     local label="$1"
     shift
     local output
-    if output=$("$PYTHON_BIN" -I -m fivedrisk._bootstrap validate "$@" 2>&1); then
+    if output=$("$PYTHON_BIN" -I -m fivedrisk._bootstrap validate "$@" --surface "$FIVEDRISK_SURFACE" 2>&1); then
         printf '%s\n' "$output"
         case "$output" in
             *"! warning:"*)

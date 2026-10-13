@@ -25,10 +25,8 @@ def policy():
     return Policy()
 
 
-class TestGatewayParity:
-    """E2: the gateway reuses the SDK input layers (injection, semantic review) +
-    Markov drift so non-Python hosts get the same governance (destination policy
-    stays SDK/configure-side)."""
+class TestGatewaySharedControls:
+    """The gateway reuses input scans and drift without overstating other controls."""
 
     def test_injection_in_input_blocks(self, log, policy):
         d = gateway.score_action_dict(
@@ -68,6 +66,17 @@ class TestGatewayParity:
         )
         assert d.get("blocked") is None
         assert d["band"] == "GREEN"
+
+    @pytest.mark.parametrize(
+        "policy",
+        [Policy(identity_required=True), Policy(retry_budget=1),
+         Policy(max_session_budget_tokens=10)],
+    )
+    def test_unsupported_admission_controls_fail_closed(self, log, policy):
+        decision = gateway.score_action_dict(
+            {"tool_name": "Read", "params": {"file_path": "/tmp/a"}}, policy, log
+        )
+        assert decision["error_type"] == "UnsupportedPolicyControls"
 
 
 # ─── score_action_dict ────────────────────────────────────────────
@@ -121,6 +130,36 @@ def test_score_action_dict_non_dict_params(policy, log):
     decision = gateway.score_action_dict(request, policy, log=log)
     assert "error" in decision
     assert decision["error_type"] == "InvalidRequest"
+
+
+def test_score_action_dict_rejects_explicit_null_params(policy, log):
+    decision = gateway.score_action_dict(
+        {"tool_name": "Bash", "params": None}, policy, log=log
+    )
+    assert decision["error_type"] == "InvalidRequest"
+    assert "JSON object" in decision["error"]
+
+
+def test_score_action_dict_rejects_explicit_null_tool_input_alias(policy, log):
+    decision = gateway.score_action_dict(
+        {"tool_name": "Bash", "tool_input": None}, policy, log=log
+    )
+    assert decision["error_type"] == "InvalidRequest"
+    assert "JSON object" in decision["error"]
+
+
+@pytest.mark.parametrize(
+    "field", ["agent_id", "run_id", "trace_id", "span_id", "parent_span_id"]
+)
+@pytest.mark.parametrize("bad_value", [True, 1, [], {}])
+def test_score_action_dict_rejects_non_string_trace_fields(
+    policy, log, field, bad_value
+):
+    decision = gateway.score_action_dict(
+        {"tool_name": "Read", "params": {}, field: bad_value}, policy, log=log
+    )
+    assert decision["error_type"] == "InvalidRequest"
+    assert field in decision["error"]
 
 
 @pytest.mark.parametrize("bad_name", [True, False, 0, 1, [], {}, "", "  "])

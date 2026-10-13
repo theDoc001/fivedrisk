@@ -71,6 +71,5 @@ tool_defaults:
 # allowlist your internal CRM / data warehouse and block everything else.
 #   configure(
 #       policy_path="path/to/customer_data.yaml",
-#       enforce_destination_policy=True,
 #       destination_allowlist=["crm.internal", "warehouse.internal"],
 #   )

@@ -299,3 +299,110 @@ def test_real_orange_scoring_holds_in_every_adapter(factory):
     policy = Policy(tool_defaults={"Read": {"tool_privilege": 3}})
     assert fa.to_verdict(*GREEN, policy).band == "ORANGE"
     assert _invoke_adapter(factory, policy=policy) is False
+
+
+@pytest.mark.parametrize("factory", ["crewai", "adk", "openai", "pydantic", "microsoft"])
+def test_every_adapter_resolves_session_per_invocation(monkeypatch, factory):
+    seen = []
+
+    def capture(*args, **kwargs):
+        seen.append(kwargs.get("session_id"))
+        return Verdict(
+            band="GREEN", sentinel=EXECUTE, blocked=False, reason="ok",
+            decision_id="dec-test",
+        )
+
+    monkeypatch.setattr(fa, "to_verdict", capture)
+    resolver = lambda ctx: ctx.test_session
+
+    for session in ("session-a", "session-b"):
+        if factory == "crewai":
+            ctx = _FakeCtx(*GREEN)
+            ctx.test_session = session
+            fa.make_crewai_pre_tool_hook(
+                session_id_resolver=resolver, _hook_aborted=_FakeHookAborted
+            )(ctx)
+        elif factory == "adk":
+            ctx = type("Ctx", (), {"test_session": session})()
+            fa.make_adk_before_tool_callback(session_id_resolver=resolver)(
+                _FakeTool(GREEN[0]), GREEN[1], ctx
+            )
+        elif factory == "openai":
+            data = _FakeGuardrailData(GREEN[0], '{"file_path":"/tmp/a"}')
+            data.test_session = session
+            fa.make_openai_tool_input_guardrail(
+                session_id_resolver=resolver, _output_cls=_FakeGuardrailOutput
+            )(data)
+        elif factory == "pydantic":
+            ctx = type("Ctx", (), {"test_session": session})()
+            asyncio.run(
+                fa.make_pydantic_process_tool_call(session_id_resolver=resolver)(
+                    ctx, _CallToolRecorder("ok"), *GREEN
+                )
+            )
+        else:
+            ctx = _FakeMSContext(*GREEN)
+            ctx.test_session = session
+            asyncio.run(
+                fa.make_ms_agent_framework_middleware(session_id_resolver=resolver)(
+                    ctx, _NextRecorder()
+                )
+            )
+
+    assert seen == ["session-a", "session-b"]
+
+
+def test_required_session_blocks_before_shared_verdict_and_logs(monkeypatch, tmp_path):
+    from fivedrisk.logger import DecisionLog
+
+    called = False
+
+    def unexpected(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(fa, "to_verdict", unexpected)
+    log = DecisionLog(tmp_path / "session-required.db")
+    decision = fa._gate_decision(
+        "Read", {}, None, None, False, None, "test",
+        log=log,
+        require_session_id=True,
+    )
+    assert decision.block is True
+    assert "session id required" in decision.reason
+    assert decision.verdict.audit_log_id is not None
+    assert len(log.query_recent(limit=10)) == 1
+    assert called is False
+
+
+@pytest.mark.parametrize("factory", ["crewai", "adk", "openai", "pydantic", "microsoft"])
+def test_every_adapter_writes_to_explicit_audit_log(tmp_path, factory):
+    from fivedrisk.logger import DecisionLog
+
+    log = DecisionLog(tmp_path / f"{factory}.db")
+    options = {"log": log}
+    if factory == "crewai":
+        fa.make_crewai_pre_tool_hook(
+            _hook_aborted=_FakeHookAborted, **options
+        )(_FakeCtx(*GREEN))
+    elif factory == "adk":
+        fa.make_adk_before_tool_callback(**options)(
+            _FakeTool(GREEN[0]), GREEN[1], None
+        )
+    elif factory == "openai":
+        fa.make_openai_tool_input_guardrail(
+            _output_cls=_FakeGuardrailOutput, **options
+        )(_FakeGuardrailData(GREEN[0], '{"file_path":"/tmp/a"}'))
+    elif factory == "pydantic":
+        asyncio.run(
+            fa.make_pydantic_process_tool_call(**options)(
+                None, _CallToolRecorder("ok"), *GREEN
+            )
+        )
+    else:
+        asyncio.run(
+            fa.make_ms_agent_framework_middleware(**options)(
+                _FakeMSContext(*GREEN), _NextRecorder()
+            )
+        )
+    assert len(log.query_recent(limit=10)) == 1

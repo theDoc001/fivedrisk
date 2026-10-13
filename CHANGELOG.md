@@ -49,7 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   static or free data-only boundary function instead. Bash gates additionally require
   one exact built-in string `command`; argv lists/tuples and variadic forms fail closed.
 - The setup verifier proves distribution/spec provenance in isolated mode without
-  importing package code first. It is safe and reproducible from a source checkout,
+  importing package code first. It is safe and rerunnable from a source checkout,
   neutral directory, or hostile cwd/PYTHONPATH.
 - Every independent public install/quickstart workflow now performs the same
   standard-library-only isolated provenance check before its first package import or
@@ -78,7 +78,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   logic. A fresh-clone installer activates and verifies the tracked hook, and managed
   GitHub rulesets protect the default branch and make release tags immutable.
 - Publication now runs the TypeScript release gate, emits verifiable root-relative
-  checksums, normalizes source-distribution metadata, attests one reproducible artifact
+  checksums, normalizes source-distribution metadata, attests one source-bound artifact
   set (including both exact versioned public/manual plugin ZIPs) to the cleared commit, and safely
   resumes only matching partial PyPI/tag/GitHub release states. Conflicts fail closed.
 - Scheduled publication binds the cleared commit to the actual workflow commit and
@@ -104,6 +104,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Public gateway commands use the provenance-checking bootstrap correctly, and the
   public candidate manifest is restricted to reviewed release files. A stale internal
   architecture/backlog artifact and its runtime provenance labels are excluded.
+- The bootstrap accepts both gateway-first and documented global-options-first gateway
+  commands. Protocol 1 rejects explicit null/non-object tool inputs and non-string trace
+  identifiers before scoring.
+- Python `@gate` now applies the same pure injection and configured semantic-review scan
+  used by shared adapters without bypassing its identity, session, budget, retry, or
+  destination controls. Sync and async scan denials stop before execution and cancel any
+  pending budget reservation.
+- Agent SDK malformed inputs fail closed instead of raising into host-dependent exception
+  handling. Every early terminal denial on `@gate`, the SDK hook, framework session
+  resolution, and LangGraph writes one policy-bound, hash-chained audit row.
+- The sensitive-data preset no longer documents the removed destination-enforcement flag.
+  Observer intake now records provider/model, data-transfer and retention boundaries,
+  credentials, timeouts/retries, and latency/cost/availability objectives.
+- External GitHub Actions, including release publishers and provenance attestation, are
+  pinned to reviewed full commit SHAs. Documentation distinguishes source-bound,
+  checksummed artifacts and rerunnable measurements from a fully hash-locked environment.
 - The repository README no longer advertises a hand-maintained test count.
 
 ## [0.7.0] - 2026-09-14
@@ -272,7 +288,7 @@ Both are warnings rather than errors, so no policy that validated before fails n
 ---
 ## [0.6.0] - 2026-07-25
 
-> **0.6.0** — framework integrations. Adds native, fail-closed adapters for the mainstream 2026 agent frameworks over one shared verdict socket, a structured Claude Code hook, a TypeScript gateway client, a setup skill, two new red-line floor axes, and an opt-in decision-memory primitive. No break to the nine locked public symbols. Folds in the prepared-but-unpublished 0.5.4 remediation cycle.
+> **0.6.0** — framework integrations. Adds provisional, fail-closed adapters for five agent frameworks over one shared verdict path, a structured Claude Code hook, a TypeScript gateway client, a setup skill, two new red-line floor axes, and an opt-in decision-memory primitive. No break to the nine locked public symbols. Folds in the prepared-but-unpublished 0.5.4 remediation cycle.
 
 ### Added
 - **Adapter kit** (`fivedrisk.adapters`) — `to_verdict()`, the one canonical scoring path every integration builds on (extracted from the gateway with no behavior change), plus the canonical never-demote `band_to_sentinel()` map (RED→block, ORANGE never execute, unknown→block).
@@ -317,7 +333,7 @@ Both are warnings rather than errors, so no policy that validated before fails n
 
 ### Added
 - **`scan-output` CLI subcommand (E1).** Wraps the shipped `fivedrisk_post_tool` egress scan (leakage / injection-echo) so the Claude Code plugin's PostToolUse hook can block on tool output (`python -m fivedrisk scan-output -`, exit 2 on block).
-- **Gateway governance parity (E2).** `fivedrisk.gateway` (non-Python hosts) now reuses the SDK input layers: prompt-injection scan + policy-driven semantic review before scoring (a hit blocks), and Markov session-drift after scoring. Destination policy stays SDK/configure-side.
+- **Gateway shared evaluation path (E2).** `fivedrisk.gateway` (non-Python hosts) reuses the SDK input layers: prompt-injection scan + policy-driven semantic review before scoring (a hit blocks), and Markov session-drift after scoring. Identity, retry, token-budget admission, and destination policy remain outside protocol 1.
 - **`FivedriskDenial`** base exception (see below).
 - **`SessionRequiredError` / `DestinationBlockError`** — two new `FivedriskDenial` subclasses for the session-required and destination-policy gate blocks (see the Changed — BEHAVIOR note).
 - **`validate` floor-control warning.** `fivedrisk validate` now warns when a RED/ORANGE floor rule is gated on `command_contains` — a best-effort, case-sensitive substring that is evadable (casing/whitespace/encoding). Hard/regulated controls should key on `tool_name` alone (unconditional). `FloorRule` docstring + README floor example updated to steer hard controls to `tool_name`-only floors.

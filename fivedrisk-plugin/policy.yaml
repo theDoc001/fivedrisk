@@ -1,11 +1,13 @@
-# 5D Risk Governance Engine — Plugin Default Policy
-# 4-band system (GREEN / YELLOW / ORANGE / RED)
+# 5D Risk Governance Engine: Plugin Starter Policy
+# Default 3-band outcomes (GREEN / ORANGE / RED).
+# YELLOW-range scores fold into GREEN unless the operator opts into 4-band mode.
 # Starter template only: the bundled hook does not load this file automatically.
 # Copy it to an operator-owned path, validate it, and pass that path with --policy.
 
 version: "0.1.0"
+enable_yellow_band: false  # set true only when the operator chooses 4-band mode
 
-# 4-Band normalized score thresholds (§12.4)
+# Normalized score thresholds. yellow_score emits YELLOW only in 4-band mode.
 bands:
   yellow_score: 1.0    # Moderate risk
   orange_score: 1.8    # High risk, mandatory approval

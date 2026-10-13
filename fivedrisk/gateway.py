@@ -3,14 +3,11 @@
 Persistent stdio + one-shot subprocess modes that let non-Python plugins
 (OpenClaw, Node, Go, Rust) call the scoring engine over JSON-lines.
 
-GOVERNANCE PARITY (E2): the gateway classifies, scores, bands, logs, AND reuses
-the SDK input layers so non-Python hosts get the same governance as
-`fivedrisk_pre_tool`: prompt-injection scanning and policy-driven semantic review
-run before scoring (a hit blocks with `band: "RED", blocked: true`), and Markov
-session-drift is applied after scoring (reusing the same per-session drift store,
-so drift accumulates across calls on a `serve_stdio` connection). The ONE layer
-that stays SDK/configure-side is the destination allow/deny policy — it is driven
-by `hooks.configure()` arguments, not the policy file the gateway loads.
+The gateway classifies, scores, bands, logs, and reuses the shared input scans.
+Markov session drift is applied when a request supplies `session_id`. Identity,
+retry, and token-budget admission are outside protocol 1, so policies enabling
+them fail closed. Destination allow/deny configured through `hooks.configure()`
+is also outside this subprocess surface.
 
 Spec: openclaw-integration-spec.md §6 L-1, L-5, L-6 and §13.
 
@@ -130,19 +127,43 @@ def score_action_dict(
         ``{"error": "...", "error_type": "..."}`` dict is returned; the
         function never raises for caller-supplied bad input.
     """
+    def invalid(reason: str, name: Any = "Unknown") -> Dict[str, Any]:
+        effective_log = log or DecisionLog()
+        logged_name = name if isinstance(name, str) and name.strip() else "Unknown"
+        effective_log.log_egress_block(
+            logged_name,
+            reason,
+            None,
+            source="gateway-error",
+            config_hash=policy.content_hash(),
+            policy_preset=policy.preset_name,
+        )
+        return {"error": reason, "error_type": "InvalidRequest"}
+
     if not isinstance(request, dict):
-        return {"error": "request must be a JSON object", "error_type": "InvalidRequest"}
+        return invalid("request must be a JSON object")
 
     tool_name = (
         request.get("tool_name")
         if "tool_name" in request
         else request.get("name")
     )
-    tool_input = request.get("params")
-    if tool_input is None:
+    if "params" in request:
+        tool_input = request["params"]
+        if not isinstance(tool_input, dict):
+            return invalid("params/tool_input must be a JSON object", tool_name)
+    else:
         tool_input = request.get("tool_input", {})
+        if not isinstance(tool_input, dict):
+            return invalid("params/tool_input must be a JSON object", tool_name)
     autonomy = request.get("autonomy")
     session_id = request.get("session_id")
+    for field in _TRACE_FIELDS:
+        value = request.get(field)
+        if value is not None and type(value) is not str:
+            return invalid(f"{field} must be a string or null", tool_name)
+    if "source" in request and type(request["source"]) is not str:
+        return invalid("source must be a string", tool_name)
     trace = {f: request.get(f) for f in _TRACE_FIELDS if request.get(f) is not None}
 
     # M0: reuse the shared adapter-kit path — ONE verdict socket for the gateway,

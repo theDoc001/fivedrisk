@@ -12,7 +12,7 @@ directly, which is what LangGraph would do under the hood.
 
 Run:
     PYTHON_BIN="${PYTHON_BIN:-python3}"
-    "$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+    "$PYTHON_BIN" -I -m pip install "fivedrisk>=0.7.1,<0.8.0"
     "$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
     "$PYTHON_BIN" examples/langgraph_multi_step.py
 
