@@ -401,11 +401,13 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     )
     combined = (gate + publish).lower()
     assert "--force" not in combined
-    assert 'cron: "5 17 * * *"' in publish
-    assert 'cron: "5 18 * * *"' in publish
-    assert "workflow_dispatch" not in publish
-    assert "steps.slot.outputs.active == 'true'" in publish
-    assert 'elif [ "$status" -eq 3 ]' in publish
+    assert publish.count("workflow_dispatch:") == 1
+    assert "schedule:" not in publish
+    assert "cron:" not in publish
+    dispatch = publish.split("workflow_dispatch:", 1)[1].split("permissions:", 1)[0]
+    assert "candidate_sha:" in dispatch
+    assert "required: true" in dispatch
+    assert "default:" not in dispatch
     assert publish.count(
         "steps.metadata.outputs.version != '' && steps.state.outputs.pypi != 'matching-complete'"
     ) == 3
@@ -438,8 +440,11 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     assert "FIVEDRISK_QA_VERDICT_SHA" in publish
     assert "FIVEDRISK_RELEASE_CANDIDATE_TREE" in publish
     assert "FIVEDRISK_QA_VERDICT_TREE" in publish
-    assert 'test "$GITHUB_EVENT_NAME" = \'schedule\'' in publish
+    assert 'test "$GITHUB_EVENT_NAME" = \'workflow_dispatch\'' in publish
     assert 'test "$GITHUB_REF" = \'refs/heads/main\'' in publish
+    assert 'test "$GITHUB_ACTOR" = "$REPOSITORY_OWNER"' in publish
+    assert 'test "$TRIGGERING_ACTOR" = "$REPOSITORY_OWNER"' in publish
+    assert 'test "$DISPATCH_CANDIDATE_SHA" = "$RELEASE_CANDIDATE_SHA"' in publish
     assert 'test "$RELEASE_CANDIDATE_SHA" = "$QA_VERDICT_SHA"' in publish
     assert 'test "$RELEASE_CANDIDATE_TREE" = "$QA_VERDICT_TREE"' in publish
     assert (
@@ -465,9 +470,13 @@ def test_publish_metadata_gate_accepts_only_the_cleared_main_tree(tmp_path):
     base = os.environ.copy()
     base.update(
         {
-            "GITHUB_EVENT_NAME": "schedule",
+            "GITHUB_EVENT_NAME": "workflow_dispatch",
             "GITHUB_REF": "refs/heads/main",
             "GITHUB_SHA": sha,
+            "GITHUB_ACTOR": "theDoc001",
+            "REPOSITORY_OWNER": "theDoc001",
+            "TRIGGERING_ACTOR": "theDoc001",
+            "DISPATCH_CANDIDATE_SHA": sha,
             "GITHUB_OUTPUT": str(tmp_path / "output"),
             "GITHUB_ENV": str(tmp_path / "environment"),
             "RELEASE_CANDIDATE_SHA": sha,
@@ -490,8 +499,12 @@ def test_publish_metadata_gate_accepts_only_the_cleared_main_tree(tmp_path):
     for key, value in (
         ("QA_VERDICT_TREE", ""),
         ("RELEASE_CANDIDATE_TREE", "0" * 40),
-        ("GITHUB_EVENT_NAME", "workflow_dispatch"),
+        ("GITHUB_EVENT_NAME", "schedule"),
         ("GITHUB_REF", "refs/heads/release/0.7.1"),
+        ("DISPATCH_CANDIDATE_SHA", ""),
+        ("DISPATCH_CANDIDATE_SHA", "0" * 40),
+        ("GITHUB_ACTOR", "not-owner"),
+        ("TRIGGERING_ACTOR", "not-owner"),
     ):
         denied_environment = base | {key: value}
         denied_environment["GITHUB_OUTPUT"] = str(tmp_path / f"denied-{key}")

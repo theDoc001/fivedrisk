@@ -1,9 +1,12 @@
 name: Publish release
 
 on:
-  schedule:
-    - cron: "5 17 * * *"
-    - cron: "5 18 * * *"
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full approved release candidate commit SHA
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -19,33 +22,25 @@ jobs:
         with:
           fetch-depth: 0
 
-      - id: slot
-        name: Select the active Europe/Tirane DST slot
-        if: github.event_name == 'schedule'
-        run: |
-          set +e
-          python3 -I tools/release_window.py --action workflow-dispatch --scheduled-expression '${{ github.event.schedule }}'
-          status=$?
-          set -e
-          if [ "$status" -eq 0 ]; then
-            echo 'active=true' >> "$GITHUB_OUTPUT"
-          elif [ "$status" -eq 3 ]; then
-            echo 'active=false' >> "$GITHUB_OUTPUT"
-          else
-            exit "$status"
-          fi
+      - name: Require an open window for explicit dispatch
+        run: python3 -I tools/release_window.py --action workflow-dispatch
 
       - id: metadata
         name: Bind merged main to the independently cleared tree
-        if: steps.slot.outputs.active == 'true'
         env:
+          DISPATCH_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           RELEASE_CANDIDATE_SHA: ${{ vars.FIVEDRISK_RELEASE_CANDIDATE_SHA }}
           QA_VERDICT_SHA: ${{ vars.FIVEDRISK_QA_VERDICT_SHA }}
           RELEASE_CANDIDATE_TREE: ${{ vars.FIVEDRISK_RELEASE_CANDIDATE_TREE }}
           QA_VERDICT_TREE: ${{ vars.FIVEDRISK_QA_VERDICT_TREE }}
         run: |
-          test "$GITHUB_EVENT_NAME" = 'schedule'
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
           test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_ACTOR" = "$REPOSITORY_OWNER"
+          test "$TRIGGERING_ACTOR" = "$REPOSITORY_OWNER"
+          test "$DISPATCH_CANDIDATE_SHA" = "$RELEASE_CANDIDATE_SHA"
           test -n "$RELEASE_CANDIDATE_SHA"
           test -n "$QA_VERDICT_SHA"
           test -n "$RELEASE_CANDIDATE_TREE"
