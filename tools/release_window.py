@@ -24,7 +24,6 @@ except ImportError:  # pragma: no cover
 ZONE_NAME = "Europe/Tirane"
 OPEN_HOUR = 19
 CLOSE_HOUR = 7
-SCHEDULES = frozenset({"5 17 * * *", "5 18 * * *"})
 ACTIONS = (
     "attestation",
     "github-release",
@@ -96,26 +95,9 @@ def current_decision(
     return decide(instant)
 
 
-def scheduled_slot_matches(schedule: str, local_time: dt.datetime) -> bool:
-    """Accept only the UTC cron that represents 19:05 at the current offset."""
-
-    if schedule not in SCHEDULES:
-        raise ReleaseWindowError("unknown scheduled publication expression")
-    offset = local_time.utcoffset()
-    if offset is None or offset.total_seconds() % 3600:
-        raise ReleaseWindowError("unsupported local UTC offset")
-    utc_hour = (OPEN_HOUR - int(offset.total_seconds() // 3600)) % 24
-    return schedule == f"5 {utc_hour} * * *"
-
-
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--action", required=True, choices=ACTIONS)
-    parser.add_argument(
-        "--scheduled-expression",
-        choices=sorted(SCHEDULES),
-        help="GitHub schedule event value; validates the active DST slot",
-    )
     return parser
 
 
@@ -123,11 +105,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         decision = current_decision()
-        if args.scheduled_expression and not scheduled_slot_matches(
-            args.scheduled_expression, decision.local_time
-        ):
-            print("INACTIVE: alternate Europe/Tirane DST schedule slot")
-            return 3
     except ReleaseWindowError as exc:
         print(f"DENY: release-window gate failed closed: {exc}", file=sys.stderr)
         return 2

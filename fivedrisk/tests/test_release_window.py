@@ -129,35 +129,6 @@ def test_missing_timezone_data_fails_closed(monkeypatch: pytest.MonkeyPatch):
         release_window.decide(_utc("2026-01-15T18:00:00"))
 
 
-@pytest.mark.parametrize(
-    ("utc_value", "schedule", "matches"),
-    [
-        ("2026-01-15T18:05:00", "5 18 * * *", True),
-        ("2026-01-15T18:05:00", "5 17 * * *", False),
-        ("2026-07-15T17:05:00", "5 17 * * *", True),
-        ("2026-07-15T17:05:00", "5 18 * * *", False),
-        ("2026-01-17T18:05:00", "5 18 * * *", True),
-        ("2026-01-17T18:05:00", "5 17 * * *", False),
-        ("2026-07-18T17:05:00", "5 17 * * *", True),
-        ("2026-07-18T17:05:00", "5 18 * * *", False),
-    ],
-)
-def test_scheduled_slot_tracks_dst(utc_value: str, schedule: str, matches: bool):
-    local = release_window.decide(_utc(utc_value)).local_time
-    assert release_window.scheduled_slot_matches(schedule, local) is matches
-
-
-def test_inactive_dst_schedule_is_a_clean_noop(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(
-        release_window,
-        "current_decision",
-        lambda: release_window.decide(_utc("2026-07-15T18:05:00")),
-    )
-    assert release_window.main(
-        ["--action", "workflow-dispatch", "--scheduled-expression", "5 18 * * *"]
-    ) == 3
-
-
 def test_documented_gate_command_ignores_hostile_pythonpath(tmp_path: Path):
     (tmp_path / "zoneinfo.py").write_text(
         "raise RuntimeError('hostile PYTHONPATH module loaded')\n", encoding="utf-8"
