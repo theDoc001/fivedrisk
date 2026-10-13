@@ -12,6 +12,8 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -19,20 +21,26 @@ import pytest
 def _run_gateway(requests):
     """Spawn the isolated installed gateway bootstrap, send requests, return
     (handshake_dict, [response_dicts]) — mirrors the TS client's transport."""
-    proc = subprocess.Popen(
-        [sys.executable, "-I", "-m", "fivedrisk._bootstrap", "gateway", "stdio"],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True,
-    )
-    payload = "".join(json.dumps(r) + "\n" for r in requests)
-    try:
-        out, _ = proc.communicate(payload, timeout=30)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        pytest.fail("gateway did not respond within 30s")
-    lines = [json.loads(ln) for ln in out.splitlines() if ln.strip()]
-    assert lines, "gateway emitted no output"
-    return lines[0], lines[1:]
+    with tempfile.TemporaryDirectory(prefix="fivedrisk-gateway-contract-") as temp:
+        audit = Path(temp) / "decisions.db"
+        proc = subprocess.Popen(
+            [
+                sys.executable, "-I", "-m", "fivedrisk._bootstrap",
+                "gateway", "stdio", "--log-path", str(audit),
+            ],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True,
+        )
+        payload = "".join(json.dumps(r) + "\n" for r in requests)
+        try:
+            out, _ = proc.communicate(payload, timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            pytest.fail("gateway did not respond within 30s")
+        lines = [json.loads(ln) for ln in out.splitlines() if ln.strip()]
+        assert lines, "gateway emitted no output"
+        assert audit.is_file() and audit.stat().st_size > 0
+        return lines[0], lines[1:]
 
 
 def test_handshake_shape():
@@ -88,12 +96,15 @@ def test_multiple_requests_correlate_by_id():
     assert by_id["b"]["band"] == "RED"
 
 
-def test_documented_isolated_one_shot_gateway_command_runs():
+def test_documented_isolated_one_shot_gateway_command_runs(tmp_path):
     request = json.dumps({
         "id": "red", "tool_name": "Bash", "params": {"command": "rm -rf /"},
     }) + "\n"
     proc = subprocess.run(
-        [sys.executable, "-I", "-m", "fivedrisk._bootstrap", "gateway", "score"],
+        [
+            sys.executable, "-I", "-m", "fivedrisk._bootstrap", "gateway", "score",
+            "--log-path", str(tmp_path / "one-shot.db"),
+        ],
         input=request, capture_output=True, text=True, timeout=30,
     )
     assert proc.returncode == 0, proc.stderr
@@ -133,7 +144,10 @@ def test_isolated_gateway_bootstrap_ignores_hostile_cwd_and_pythonpath(tmp_path)
     )
     env = {**os.environ, "PYTHONPATH": str(tmp_path)}
     proc = subprocess.Popen(
-        [sys.executable, "-I", "-m", "fivedrisk._bootstrap", "gateway", "stdio"],
+        [
+            sys.executable, "-I", "-m", "fivedrisk._bootstrap", "gateway", "stdio",
+            "--log-path", str(tmp_path / "hostile-cwd.db"),
+        ],
         cwd=tmp_path, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, text=True,
     )
