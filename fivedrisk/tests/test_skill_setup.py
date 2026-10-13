@@ -170,12 +170,13 @@ def test_skill_routes_python_and_non_python_custom_hosts_separately():
     assert "JSON-lines" in adapters
 
 
-def test_example_gate_runs_and_shows_green_and_blocked_red():
+def test_example_gate_runs_and_shows_green_and_blocked_red(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(DEV)
+    env["FIVEDRISK_AUDIT_PATH"] = str(tmp_path / "example.db")
     out = subprocess.run(
         [sys.executable, str(SKILL / "scripts" / "example_gate.py")],
-        capture_output=True, text=True, timeout=30, env=env,
+        cwd=tmp_path, capture_output=True, text=True, timeout=30, env=env,
     )
     assert out.returncode == 0, out.stderr
     assert "GREEN" in out.stdout and "blocked:" in out.stdout
@@ -607,6 +608,7 @@ def test_instruction_population_gate_accepts_selected_interpreter(content, tmp_p
 def test_command_emitting_helpers_use_resolved_interpreter(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(DEV)
+    env["FIVEDRISK_AUDIT_PATH"] = str(tmp_path / "command-helper.db")
     detect = subprocess.run(
         [sys.executable, str(DETECT)], capture_output=True, text=True, timeout=30, env=env
     )
@@ -637,6 +639,7 @@ def test_bundled_helpers_run_from_an_unrelated_working_directory(tmp_path):
     env.pop("PYTHONPATH", None)
     env["PYTHON_BIN"] = sys.executable
     env["FIVEDRISK_SURFACE"] = "gate"
+    env["FIVEDRISK_AUDIT_PATH"] = str(tmp_path / "bundled-helper.db")
     commands = [
         [sys.executable, str(DETECT)],
         ["/bin/bash", str(VERIFY)],
@@ -805,7 +808,11 @@ def test_documented_isolated_example_ignores_hostile_cwd_and_pythonpath(tmp_path
         f"Path({str(marker)!r}).write_text('ran')\n",
         encoding="utf-8",
     )
-    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(tmp_path),
+        "FIVEDRISK_AUDIT_PATH": str(tmp_path / "isolated-example.db"),
+    }
     out = subprocess.run(
         [sys.executable, "-I", str(SKILL / "scripts" / "example_gate.py")],
         cwd=tmp_path,
@@ -967,6 +974,7 @@ def test_verify_install_is_surface_aware_for_identity_policy(tmp_path):
 def test_example_gate_is_safe_to_repeat(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(DEV)
+    env.pop("FIVEDRISK_AUDIT_PATH", None)
     command = [sys.executable, str(SKILL / "scripts" / "example_gate.py")]
     first = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=30, env=env)
     second = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=30, env=env)
@@ -975,7 +983,8 @@ def test_example_gate_is_safe_to_repeat(tmp_path):
     assert (tmp_path / "fivedrisk_decisions.db").is_file()
 
 
-def test_example_gate_fails_if_destructive_call_is_not_denied(monkeypatch):
+def test_example_gate_fails_if_destructive_call_is_not_denied(monkeypatch, tmp_path):
+    monkeypatch.setenv("FIVEDRISK_AUDIT_PATH", str(tmp_path / "denial.db"))
     mod = _load_example()
     monkeypatch.setattr(mod, "run_shell", lambda command: f"unexpected execution: {command}")
     with pytest.raises(RuntimeError, match="destructive simulated call was not denied"):
@@ -986,6 +995,7 @@ def test_example_gate_rejects_an_explicit_missing_policy(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(DEV)
     env["FIVEDRISK_POLICY_PATH"] = str(tmp_path / "missing-policy.yaml")
+    env["FIVEDRISK_AUDIT_PATH"] = str(tmp_path / "missing-policy.db")
     out = subprocess.run(
         [sys.executable, str(SKILL / "scripts" / "example_gate.py")],
         cwd=tmp_path,
