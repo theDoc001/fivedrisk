@@ -223,7 +223,7 @@ def test_crossover_aggregator_rejects_malformed_or_incomparable_inputs(tmp_path,
 
 def test_single_run_driver_schema_is_accepted_by_aggregator(tmp_path):
     generated = subprocess.run(
-        (sys.executable, "-I", str(DRIVER), "--runs", "1", "--json"),
+        (sys.executable, "-B", "-I", str(DRIVER), "--runs", "1", "--json"),
         check=False, capture_output=True, text=True, cwd=tmp_path,
     )
     assert generated.returncode == 0, generated.stderr
@@ -250,7 +250,7 @@ def test_single_run_driver_schema_is_accepted_by_aggregator(tmp_path):
 @pytest.mark.parametrize("invalid", ("0", "-1"))
 def test_driver_cli_rejects_invalid_run_count_before_benchmark(tmp_path, invalid):
     result = subprocess.run(
-        (sys.executable, "-I", str(DRIVER), "--runs", invalid, "--json"),
+        (sys.executable, "-B", "-I", str(DRIVER), "--runs", invalid, "--json"),
         check=False, capture_output=True, text=True, cwd=tmp_path,
     )
     assert result.returncode != 0

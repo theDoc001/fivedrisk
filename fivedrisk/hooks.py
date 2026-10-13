@@ -571,6 +571,41 @@ def scan_semantic_review(
     return None
 
 
+def _scan_tool_input(
+    tool_name: str,
+    tool_input: Dict[str, Any],
+    semantic_patterns: Iterable[tuple[str, str]] = (),
+) -> Optional[tuple[str, str]]:
+    """Return a pure pre-score input finding shared by every runtime surface."""
+    input_text = str(tool_input)
+    injection = scan_input_for_injection(input_text, source=f"tool:{tool_name}")
+    if injection:
+        return "injection", f"injection detected in tool input: {injection}"
+    semantic = scan_semantic_review(input_text, patterns=semantic_patterns)
+    if semantic:
+        return "semantic_review", f"semantic review required: {semantic}"
+    return None
+
+
+def _log_unscored_block(
+    log: DecisionLog,
+    tool_name: str,
+    reason: str,
+    session_id: Optional[str],
+    source: str,
+    policy: Policy,
+) -> int:
+    """Write one policy-bound audit row for a terminal pre-score denial."""
+    return log.log_egress_block(
+        tool_name,
+        reason,
+        session_id,
+        source=source,
+        config_hash=policy.content_hash(),
+        policy_preset=policy.preset_name,
+    )
+
+
 # ─── @gate decorator ───────────────────────────────────────────
 
 def _snapshot_gate_value(
@@ -772,6 +807,9 @@ def gate(
                     fn, snapshot_args, snapshot_kwargs, tool_name
                 )
             except GateInputError as exc:
+                _log_unscored_block(
+                    _use_log, tool_name, str(exc), None, "gate-input-error", _use_policy
+                )
                 if on_block:
                     return on_block(str(exc))
                 raise
@@ -779,19 +817,12 @@ def gate(
             # Build policy input after removing internal per-call overrides.
             tool_input = _build_gate_tool_input(fn, snapshot_args, snapshot_kwargs)
 
-            action = classify_tool_call(
-                tool_name=tool_name,
-                tool_input=tool_input,
-                policy=_use_policy,
-                autonomy_context=autonomy_context,
-                source="gate-decorator",
-            )
-            if call_acting_identity is not None:
-                action.acting_identity = call_acting_identity
-
             session_id = _resolve_gate_session_id(fn, snapshot_args, snapshot_kwargs)
             if _require_session_id and session_id is None:
                 reason = _session_required_message()
+                _log_unscored_block(
+                    _use_log, tool_name, reason, None, "gate-session-block", _use_policy
+                )
                 if on_block:
                     return on_block(reason)
                 raise SessionRequiredError(reason)
@@ -803,6 +834,9 @@ def gate(
                 reason = (
                     f"5D IDENTITY_REQUIRED_NOT_SUPPLIED ({tool_name}): "
                     f"policy requires identity, none supplied"
+                )
+                _log_unscored_block(
+                    _use_log, tool_name, reason, session_id, "gate-identity-block", _use_policy
                 )
                 if on_block:
                     return on_block(reason)
@@ -824,9 +858,34 @@ def gate(
                     f"5D {reservation.reason_code} ({tool_name}): "
                     f"projected spend would exceed max_session_budget_tokens"
                 )
+                _log_unscored_block(
+                    _use_log, tool_name, reason, session_id, "gate-budget-block", _use_policy
+                )
                 if on_block:
                     return on_block(reason)
                 raise BudgetExceededError(reason)
+
+            scan_finding = _scan_tool_input(
+                tool_name,
+                tool_input,
+                (
+                    _semantic_review_patterns
+                    if policy is None
+                    else _flatten_semantic_review_patterns(
+                        _use_policy.semantic_review_patterns
+                    )
+                ),
+            )
+            if scan_finding:
+                reason = f"5D input block: {scan_finding[1]}"
+                if session_id and session_id in _budget_accumulators:
+                    _budget_accumulators[session_id].cancel_reservation(tool_call_id)
+                _log_unscored_block(
+                    _use_log, tool_name, reason, session_id, "gate-input-block", _use_policy
+                )
+                if on_block:
+                    return on_block(reason)
+                raise BandBlockError(reason)
 
             destination_check = check_destination_policy(tool_name, tool_input)
             if destination_check and destination_check.decision == "block":
@@ -837,12 +896,23 @@ def gate(
                 # the primary path. Audit it once via the shipped egress-block
                 # writer. source distinguishes the @gate entry path from the
                 # SDK-hook (pre-tool-input-block) and gateway (gateway-input-block).
-                _use_log.log_egress_block(
-                    tool_name, destination_check.reason, session_id, source="gate-input-block"
+                _log_unscored_block(
+                    _use_log, tool_name, destination_check.reason, session_id,
+                    "gate-input-block", _use_policy
                 )
                 if on_block:
                     return on_block(destination_check.reason)
                 raise DestinationBlockError(destination_check.reason)
+
+            action = classify_tool_call(
+                tool_name=tool_name,
+                tool_input=tool_input,
+                policy=_use_policy,
+                autonomy_context=autonomy_context,
+                source="gate-decorator",
+            )
+            if call_acting_identity is not None:
+                action.acting_identity = call_acting_identity
 
             result = score(action, _use_policy)
             # Retry budget. Counted after scoring so the fingerprint is the one the decision
@@ -938,24 +1008,20 @@ def gate(
                     fn, snapshot_args, snapshot_kwargs, tool_name
                 )
             except GateInputError as exc:
+                _log_unscored_block(
+                    _use_log, tool_name, str(exc), None, "gate-input-error", _use_policy
+                )
                 if on_block:
                     return (await on_block(str(exc))) if inspect.iscoroutinefunction(on_block) else on_block(str(exc))
                 raise
             tool_input = _build_gate_tool_input(fn, snapshot_args, snapshot_kwargs)
 
-            action = classify_tool_call(
-                tool_name=tool_name,
-                tool_input=tool_input,
-                policy=_use_policy,
-                autonomy_context=autonomy_context,
-                source="gate-decorator",
-            )
-            if call_acting_identity is not None:
-                action.acting_identity = call_acting_identity
-
             session_id = _resolve_gate_session_id(fn, snapshot_args, snapshot_kwargs)
             if _require_session_id and session_id is None:
                 reason = _session_required_message()
+                _log_unscored_block(
+                    _use_log, tool_name, reason, None, "gate-session-block", _use_policy
+                )
                 if on_block:
                     return (await on_block(reason)) if inspect.iscoroutinefunction(on_block) else on_block(reason)
                 raise SessionRequiredError(reason)
@@ -967,6 +1033,9 @@ def gate(
                 reason = (
                     f"5D IDENTITY_REQUIRED_NOT_SUPPLIED ({tool_name}): "
                     f"policy requires identity, none supplied"
+                )
+                _log_unscored_block(
+                    _use_log, tool_name, reason, session_id, "gate-identity-block", _use_policy
                 )
                 if on_block:
                     return (await on_block(reason)) if inspect.iscoroutinefunction(on_block) else on_block(reason)
@@ -988,9 +1057,38 @@ def gate(
                     f"5D {reservation.reason_code} ({tool_name}): "
                     f"projected spend would exceed max_session_budget_tokens"
                 )
+                _log_unscored_block(
+                    _use_log, tool_name, reason, session_id, "gate-budget-block", _use_policy
+                )
                 if on_block:
                     return (await on_block(reason)) if inspect.iscoroutinefunction(on_block) else on_block(reason)
                 raise BudgetExceededError(reason)
+
+            scan_finding = _scan_tool_input(
+                tool_name,
+                tool_input,
+                (
+                    _semantic_review_patterns
+                    if policy is None
+                    else _flatten_semantic_review_patterns(
+                        _use_policy.semantic_review_patterns
+                    )
+                ),
+            )
+            if scan_finding:
+                reason = f"5D input block: {scan_finding[1]}"
+                if session_id and session_id in _budget_accumulators:
+                    _budget_accumulators[session_id].cancel_reservation(tool_call_id)
+                _log_unscored_block(
+                    _use_log, tool_name, reason, session_id, "gate-input-block", _use_policy
+                )
+                if on_block:
+                    return (
+                        (await on_block(reason))
+                        if inspect.iscoroutinefunction(on_block)
+                        else on_block(reason)
+                    )
+                raise BandBlockError(reason)
 
             destination_check = check_destination_policy(tool_name, tool_input)
             if destination_check and destination_check.decision == "block":
@@ -999,12 +1097,23 @@ def gate(
                 # O3-sibling (async): same as the sync @gate path — audit the
                 # destination-input denial once before the return/raise, since
                 # both happen before the score-time log below.
-                _use_log.log_egress_block(
-                    tool_name, destination_check.reason, session_id, source="gate-input-block"
+                _log_unscored_block(
+                    _use_log, tool_name, destination_check.reason, session_id,
+                    "gate-input-block", _use_policy
                 )
                 if on_block:
                     return (await on_block(destination_check.reason)) if inspect.iscoroutinefunction(on_block) else on_block(destination_check.reason)
                 raise DestinationBlockError(destination_check.reason)
+
+            action = classify_tool_call(
+                tool_name=tool_name,
+                tool_input=tool_input,
+                policy=_use_policy,
+                autonomy_context=autonomy_context,
+                source="gate-decorator",
+            )
+            if call_acting_identity is not None:
+                action.acting_identity = call_acting_identity
 
             result = score(action, _use_policy)
             # Retry budget. Counted after scoring so the fingerprint is the one the decision
@@ -1217,16 +1326,58 @@ async def fivedrisk_pre_tool(
         {"decision": "block", "reason": "..."} → block (ORANGE or RED band,
         or injection detected).
     """
+    if not isinstance(input_data, dict):
+        reason = "Agent SDK hook input must be a JSON object"
+        _log_unscored_block(
+            _effective_log(), "Unknown", reason, None, "pre-tool-input-error", _policy
+        )
+        return {"decision": "block", "reason": reason}
     tool_name, tool_input = _extract_tool_info(input_data)
     session_id = _resolve_session_id(input_data, tool_use_id, context)
+    if type(tool_name) is not str or not tool_name.strip():
+        reason = "tool_name must be a non-empty string"
+        _log_unscored_block(
+            _effective_log(), "Unknown", reason, session_id, "pre-tool-input-error", _policy
+        )
+        return {"decision": "block", "reason": reason}
+    if not isinstance(tool_input, dict):
+        reason = "tool_input must be a JSON object"
+        _log_unscored_block(
+            _effective_log(), tool_name, reason, session_id, "pre-tool-input-error", _policy
+        )
+        return {"decision": "block", "reason": reason}
     if _require_session_id and session_id is None:
-        return {"decision": "block", "reason": _session_required_message()}
+        reason = _session_required_message()
+        _log_unscored_block(
+            _effective_log(), tool_name, reason, None, "pre-tool-session-block", _policy
+        )
+        return {"decision": "block", "reason": reason}
+
+    unsupported_controls = []
+    if _policy.identity_required:
+        unsupported_controls.append("identity_required")
+    if _policy.retry_budget is not None:
+        unsupported_controls.append("retry_budget")
+    if _policy.max_session_budget_tokens is not None:
+        unsupported_controls.append("max_session_budget_tokens")
+    if _policy.max_tool_call_budget_tokens is not None:
+        unsupported_controls.append("max_tool_call_budget_tokens")
+    if unsupported_controls:
+        reason = (
+            "5D SDK-hook surface cannot enforce configured admission controls: "
+            + ", ".join(unsupported_controls)
+        )
+        _log_unscored_block(
+            _effective_log(), tool_name, reason, session_id, "pre-tool-policy-block", _policy
+        )
+        return {"decision": "block", "reason": reason}
 
     # L1: injection scan on tool input text before scoring
-    input_text = str(tool_input)
-    injection = scan_input_for_injection(input_text, source=f"tool:{tool_name}")
-    if injection:
-        reason = f"5D injection detected in tool input: {injection}"
+    scan_finding = _scan_tool_input(
+        tool_name, tool_input, _semantic_review_patterns
+    )
+    if scan_finding:
+        reason = f"5D {scan_finding[1]}"
         # O3: these pre-tool input blocks return BEFORE scoring/logging, so the
         # SDK-hook path was weaker than the gateway (which logs its input blocks).
         # Audit the denial via the shipped egress-block writer so "audits every
@@ -1234,27 +1385,22 @@ async def fivedrisk_pre_tool(
         # its own destination-input denials separately (source=gate-input-block,
         # honoring the per-call log= override); this call covers only these
         # pre-tool early returns.
-        _effective_log().log_egress_block(
-            tool_name, reason, session_id, source="pre-tool-input-block"
+        _log_unscored_block(
+            _effective_log(), tool_name, reason, session_id, "pre-tool-input-block", _policy
         )
-        return {"decision": "block", "reason": reason}
-
-    semantic_review = scan_semantic_review(input_text)
-    if semantic_review:
-        reason = f"5D ASK: semantic review required in tool input: {semantic_review}"
-        _effective_log().log_egress_block(
-            tool_name, reason, session_id, source="pre-tool-input-block"
-        )
-        return {
+        response = {
             "decision": "block",
             "reason": reason,
-            "semantic_review": True,
         }
+        if scan_finding[0] == "semantic_review":
+            response["semantic_review"] = True
+        return response
 
     destination_check = check_destination_policy(tool_name, tool_input)
     if destination_check and destination_check.decision == "block":
-        _effective_log().log_egress_block(
-            tool_name, destination_check.reason, session_id, source="pre-tool-input-block"
+        _log_unscored_block(
+            _effective_log(), tool_name, destination_check.reason, session_id,
+            "pre-tool-input-block", _policy
         )
         return {
             "decision": "block",
@@ -1317,14 +1463,28 @@ async def fivedrisk_post_tool(
         Empty dict → output is clean.
         {"decision": "block", "reason": "..."} → output blocked.
     """
+    if not isinstance(input_data, dict):
+        reason = "Agent SDK hook input must be a JSON object"
+        row_id = _log_unscored_block(
+            _effective_log(), "Unknown", reason, None, "post-tool-input-error", _policy
+        )
+        return {"decision": "block", "reason": reason, "log_id": row_id}
     tool_name, _ = _extract_tool_info(input_data)
+    if type(tool_name) is not str or not tool_name.strip():
+        reason = "tool_name must be a non-empty string"
+        row_id = _log_unscored_block(
+            _effective_log(), "Unknown", reason, None, "post-tool-input-error", _policy
+        )
+        return {"decision": "block", "reason": reason, "log_id": row_id}
     output = str(input_data.get("tool_result", input_data.get("output", "")))
     session_id = _resolve_session_id(input_data, tool_use_id, context)
 
     def _block(reason: str, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         # M7: egress blocks are now written to the audit trail (they were not
         # before), so an operator can reconstruct why an output was blocked.
-        row_id = _effective_log().log_egress_block(tool_name, reason, session_id)
+        row_id = _log_unscored_block(
+            _effective_log(), tool_name, reason, session_id, "post-tool-egress", _policy
+        )
         result = {"decision": "block", "reason": reason, "log_id": row_id}
         if extra:
             result.update(extra)

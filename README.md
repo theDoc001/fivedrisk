@@ -13,15 +13,15 @@ Built in Vienna, Austria. Architecturally sovereign: no hyperscaler dependency, 
 
 ---
 
-## The two-stage gate
+## Deterministic first, optional semantic second
 
-The two stages answer different questions. fivedrisk asks whether an action is permitted: rules evaluated over the action envelope, its policy, the caller's identity and the sequence so far, with the record naming the policy that decided. A semantic scanner asks whether a span of text is malicious or sensitive, which is a judgment, and it is reserved for the YELLOW and ORANGE bands where that judgment is what the decision turns on.
+The stages answer different questions. fivedrisk asks whether an action is permitted: rules evaluated over the action envelope, its policy, the caller's identity and the sequence so far, with the record naming the policy that decided. A semantic scanner asks whether a span of text is malicious or sensitive, which is a judgment. fivedrisk does not bundle or invoke a semantic scanner. A deployment may add one for explicitly named ambiguity classes, but it may only preserve or raise the deterministic severity, never lower it. YELLOW is opt-in and its score range folds into GREEN by default; ORANGE remains approval-required.
 
-The order is the design. The deterministic stage runs first and reaches a verdict with no model call, so every action it resolves costs no inference, no round trip and no tokens, and no prompt leaves your estate. The expensive stage runs only where it changes the outcome.
+The order is the design. The deterministic stage runs first and reaches a verdict with no model call, so every action it resolves costs no inference, no round trip and no tokens, and no prompt leaves your estate. An optional semantic stage runs only for ambiguity classes the deployment explicitly routes.
 
 They run in series because the questions differ, not because one is a cheaper version of the other. A deterministic gate fails by holding a wrong rule, which you can read, test and fix. A semantic scanner fails by making a wrong call on an input nobody anticipated. Neither failure mode substitutes for the other.
 
-How much of your action volume never reaches the second stage depends on your traffic and your policy, and that fraction is what decides the saving. Measure it on yours rather than taking a number from a README.
+How much of your action volume reaches an optional second stage depends on your traffic and policy. Measure that fraction, latency, and compute on your deployment rather than taking a number from a README.
 
 ```
 agent action
@@ -30,14 +30,15 @@ agent action
 [fivedrisk]  ← 0.2 to 2.9 ms, deterministic, audited
     │
     ├── GREEN  ─────────────► execute
-    ├── YELLOW ─► LLM scanner ──► execute / log / escalate  (100–700 ms only when needed)
+    ├── YELLOW ───────────► execute / enhanced log  (opt-in band)
     ├── ORANGE ─► HITL ────────► approve / deny
     └── RED    ─────────────► block, audit, alert
 ```
 
 The arrows show the shipped default dispositions, not the definition of each band.
-A band is severity; a deployment may remap its disposition. Concrete adapters below
-state where their integration contract deliberately blocks or requests approval.
+A band is severity; a deployment may remap its disposition. Optional observer routing
+is deployment-owned and is not shown as a shipped path. Concrete adapters below state
+where their integration contract deliberately blocks or requests approval.
 
 **What it is.** A runtime action-governance layer for AI agents. Per-action 5D scoring, HITL escalation, append-only audit log, 16-state Markov SafetyDrift for compositional attacks, identity capture, and an NDJSON event stream for SIEM. Think OPA for AI agents.
 
@@ -51,7 +52,7 @@ fivedrisk assesses whether an action is **safe to run** (dangerous, out-of-polic
 
 ```bash
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -m pip install "fivedrisk>=0.7.1,<0.8.0"
 "$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 ```
 
@@ -85,7 +86,11 @@ Full walkthrough including scope-narrowing guidance and per-deployment tuning: [
 
 fivedrisk is an ingredient you drop into your agent stack, not a platform you migrate to. Drop it in via a decorator, a native framework adapter, a structured host hook, or the language-agnostic gateway. Everything below ships today. Not sure which one? Run the setup skill's `detect_framework.py` and it prints the adapter + one-line wiring for what you already have installed.
 
-**Agent frameworks** — a native, fail-closed adapter for each mainstream 2026 agent framework. Every adapter is a thin shim over one shared verdict socket (`fivedrisk.to_verdict`); RED blocks, ORANGE needs approval (else blocks), and any invalid input or engine error fails closed. Copy-paste wiring for each: [`fivedrisk-plugin/skills/fivedrisk-setup/references/adapters.md`](fivedrisk-plugin/skills/fivedrisk-setup/references/adapters.md).
+**Agent frameworks** — provisional adapters built against the frameworks' documented
+APIs and tested with local fakes. Pin the framework version and prove a harmless RED
+call cannot execute before relying on one. Every adapter is a thin shim over the shared
+`fivedrisk.to_verdict` path; RED and ORANGE stop, and invalid input or engine errors fail
+closed. Copy-paste wiring: [`references/adapters.md`](fivedrisk-plugin/skills/fivedrisk-setup/references/adapters.md).
 
 | Framework | How you wire it | Entry point |
 |---|---|---|
@@ -104,18 +109,43 @@ fivedrisk is an ingredient you drop into your agent stack, not a platform you mi
 | Surface | How you wire it | Entry point |
 |---|---|---|
 | **Claude Code** | PreToolUse gate (ORANGE → native `ask`) + PostToolUse verify | `"$PYTHON_BIN" -I -m fivedrisk._bootstrap claude-hook` |
-| **Any non-Python host** (Node, Go, Rust, TypeScript) | Long-lived JSON-lines subprocess, full governance parity | `"$PYTHON_BIN" -I -m fivedrisk._bootstrap gateway stdio` |
+| **Any non-Python host** (Node, Go, Rust, TypeScript) | Long-lived JSON-lines subprocess | `"$PYTHON_BIN" -I -m fivedrisk._bootstrap gateway stdio` |
 | **OpenClaw** | TypeScript plugin over the gateway | [`5d-claw-security`](https://github.com/theDoc001/5d-claw-security) |
 | **Setup / field engineering** | Detect your framework; select, copy, and validate an operator-owned policy; verify install | [`fivedrisk-setup` skill](fivedrisk-plugin/skills/fivedrisk-setup/) |
+
+Install the advisory setup skill directly from this public repository with the
+[Skills CLI](https://www.skills.sh/docs/cli):
+
+```bash
+git clone --branch v0.7.1 --depth 1 https://github.com/theDoc001/fivedrisk.git
+cd fivedrisk
+npx --yes skills@1.7.2 add . --skill fivedrisk-setup
+```
+
+The skill helps design and verify a deployment. It does not install the Python
+runtime or intercept an agent's tool calls by itself.
 
 **The gateway** lets any language call the engine over JSON-lines:
 
 ```bash
-"$PYTHON_BIN" -I -m fivedrisk._bootstrap gateway stdio --policy policy.yaml   # long-lived, one JSON request/decision per line
-"$PYTHON_BIN" -I -m fivedrisk._bootstrap gateway score --policy policy.yaml   # one-shot
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap --policy policy.yaml --log-path /absolute/path/fivedrisk.db gateway stdio
+"$PYTHON_BIN" -I -m fivedrisk._bootstrap --policy policy.yaml --log-path /absolute/path/fivedrisk.db gateway score
 ```
 
-It has governance parity with the Python hooks: it classifies, scores, bands, and logs, and it reuses the input layers (prompt-injection scanning and policy-driven semantic review run before scoring, Markov session-drift accumulates across calls on a `stdio` connection). The one layer that stays Python-side is the destination allow/deny policy, which is driven by `configure()` arguments rather than the policy file the gateway loads.
+The gateway classifies, scans input, scores, optionally applies session drift, and logs.
+It fails closed when a policy enables identity, retry, or token-budget admission because
+protocol 1 cannot enforce those controls. Destination allow/deny configured through
+Python `configure()` is also outside this surface. See the complete
+[`protocol 1 contract`](docs/gateway-protocol.md).
+
+| Surface | Input scans | Session drift | Identity / retry / token admission | Destination control | Audit selection |
+|---|---|---|---|---|---|
+| `@gate` | yes | yes | enforced | enforced after `configure()` | `configure(log_path=...)` |
+| Framework factories | yes | with a static ID or resolver | unsupported policies block | not provided | `log=DecisionLog(...)` |
+| LangGraph node | yes | from state | unsupported policies block | enforced after `configure()` | `log=` |
+| JSON-lines gateway | yes | from request | unsupported policies block | not provided | required `--log-path` in deployment wiring |
+| SDK `fivedrisk_pre_tool` | yes | from payload | unsupported policies block | enforced after `configure()` | `configure(log_path=...)` |
+| Claude structured hook | yes | from payload | unsupported policies block | not provided | required CLI/configured path |
 
 ---
 
@@ -176,11 +206,11 @@ Full vocabulary and the disposition ladder (`EXECUTE` / `LOG_ELEVATED` / `ROUTE_
 
 ```bash
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -m pip install "fivedrisk>=0.7.1,<0.8.0"
 "$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 
 # With LangGraph integration
-"$PYTHON_BIN" -m pip install "fivedrisk[langgraph]>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -m pip install "fivedrisk[langgraph]>=0.7.1,<0.8.0"
 "$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 ```
 
@@ -189,8 +219,8 @@ that ref. Prefer an immutable full commit; never silently substitute VCS after a
 index failure. Replace `<FULL_COMMIT>` with the approved commit:
 
 ```bash
-"$PYTHON_BIN" -m pip install "git+https://github.com/theDoc001/fivedrisk.git@<FULL_COMMIT>"
-"$PYTHON_BIN" -m pip install "git+https://github.com/theDoc001/fivedrisk.git@<FULL_COMMIT>#egg=fivedrisk[langgraph]"
+"$PYTHON_BIN" -I -m pip install "git+https://github.com/theDoc001/fivedrisk.git@<FULL_COMMIT>"
+"$PYTHON_BIN" -I -m pip install "git+https://github.com/theDoc001/fivedrisk.git@<FULL_COMMIT>#egg=fivedrisk[langgraph]"
 ```
 
 ---
@@ -513,7 +543,7 @@ fivedrisk's `ModelClass` is an abstraction over capability, not a model name. Op
 
 ## Benchmark and test suite
 
-fivedrisk ships with two reproducible measurement surfaces. Both are deterministic, safe to run in CI, and require no external API calls.
+fivedrisk ships with two offline, rerunnable measurement surfaces. Both are deterministic for the same code, inputs, interpreter, and resolved dependencies; neither requires external API calls.
 
 **Performance benchmark** (`python benchmarks/bench_minimal.py`): measures per-action latency across the core scoring path, scanners, drift accumulator, and audit-log I/O. Reports p50/p95/p99 over 2K to 10K samples per scenario. Produces the numbers in [Performance](#performance) below.
 
@@ -556,7 +586,7 @@ For the full coverage map across threat catalogues see [Coverage](#coverage).
 
 ## Performance
 
-Measured on Apple M1, single-thread. Numbers reproducible from `benchmarks/bench_minimal.py`.
+Measured on Apple M1, single-thread. Rerun `benchmarks/bench_minimal.py`; absolute numbers vary with hardware, interpreter, and resolved dependencies.
 
 | Operation | p50 | p95 | p99 |
 |---|---|---|---|
@@ -634,7 +664,7 @@ fivedrisk is one layer in a defence-in-depth AI governance stack. The runtime pr
 - **[MITRE ATLAS coverage](mitre-atlas-coverage.md)** — tactic and technique mapping against MITRE ATLAS.
 - **[Decision-log analysis cookbook](decision-log-cookbook.md)** — sample SQL queries against the audit log for common operational questions.
 
-Each coverage doc names which fivedrisk primitives address which threat class and is reproducible from the pytest marker suite.
+Each coverage doc names which fivedrisk primitives address which threat class and can be rerun from the pytest marker suite in a recorded environment.
 
 ---
 

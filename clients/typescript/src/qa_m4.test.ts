@@ -135,7 +135,7 @@ test("transport: error non-string object + no band → block", need, async () =>
 });
 for (const mode of ["error-object-green", "error-array-green", "error-number-green",
                     "error-boolean-green", "error-null-green"]) {
-  test(`transport: any error property beats GREEN (${mode})`, need, async () => {
+    test(`transport: any error property takes precedence over GREEN (${mode})`, need, async () => {
     const v = await expectBlock(mode);
     assert.equal(v.sentinel, "block");
   });

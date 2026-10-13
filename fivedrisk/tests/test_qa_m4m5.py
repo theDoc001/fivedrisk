@@ -12,6 +12,8 @@ import asyncio
 import json
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -190,14 +192,20 @@ class TestMSMiddlewareShortCircuit:
 
 # ── M4 (Python side): does the contract lock actually catch a rename? ──────────
 def _run_gateway(requests):
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "fivedrisk", "gateway", "stdio"],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-    )
-    payload = "".join(json.dumps(r) + "\n" for r in requests)
-    out, _ = proc.communicate(payload, timeout=30)
-    lines = [json.loads(ln) for ln in out.splitlines() if ln.strip()]
-    return lines[0], lines[1:]
+    with tempfile.TemporaryDirectory(prefix="fivedrisk-qa-gateway-") as temp:
+        audit = Path(temp) / "decisions.db"
+        proc = subprocess.Popen(
+            [
+                sys.executable, "-m", "fivedrisk", "gateway", "stdio",
+                "--log-path", str(audit),
+            ],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        payload = "".join(json.dumps(r) + "\n" for r in requests)
+        out, _ = proc.communicate(payload, timeout=30)
+        lines = [json.loads(ln) for ln in out.splitlines() if ln.strip()]
+        assert audit.is_file() and audit.stat().st_size > 0
+        return lines[0], lines[1:]
 
 
 class TestGatewayContractForTS:

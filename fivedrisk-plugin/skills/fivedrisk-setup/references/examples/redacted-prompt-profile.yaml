@@ -17,17 +17,17 @@ tools:
       name: {value: "send_reply", basis: prompt-derived, confirmation_status: proposed}
       actions:
         items:
-          - {value: "send a customer-facing message", basis: prompt-derived, confirmation_status: proposed}
+          - {value: "send an external-recipient message", basis: prompt-derived, confirmation_status: proposed}
         basis: prompt-derived
         confirmation_status: proposed
       data_classes:
         items:
-          - {value: "customer support content", basis: prompt-derived, confirmation_status: proposed}
+          - {value: "user support content", basis: prompt-derived, confirmation_status: proposed}
         basis: prompt-derived
         confirmation_status: proposed
       destinations:
         items:
-          - {value: "customer messaging system", basis: prompt-derived, confirmation_status: proposed}
+          - {value: "external messaging system", basis: prompt-derived, confirmation_status: proposed}
         basis: prompt-derived
         confirmation_status: proposed
       dimensions:
@@ -42,7 +42,7 @@ acceptance_cases:
   allowed: {items: [], basis: unresolved, confirmation_status: unresolved}
   approval_required:
     items:
-      - {value: "Send any customer-facing reply", basis: inferred, confirmation_status: proposed}
+      - {value: "Send any external-recipient reply", basis: inferred, confirmation_status: proposed}
     basis: inferred
     confirmation_status: proposed
   refused: {items: [], basis: unresolved, confirmation_status: unresolved}
@@ -60,3 +60,15 @@ observer:
   unavailable_disposition: {value: block, basis: unresolved, confirmation_status: proposed}
   thresholds_status: {value: uncalibrated, basis: unresolved, confirmation_status: proposed}
   evidence_status: {value: design_only, basis: operator-stated, confirmation_status: proposed}
+  provider_model_version: {value: null, basis: unresolved, confirmation_status: unresolved}
+  execution_locality: {value: null, basis: unresolved, confirmation_status: unresolved}
+  transmitted_fields: {items: [], basis: unresolved, confirmation_status: unresolved}
+  retention_training_policy: {value: null, basis: unresolved, confirmation_status: unresolved}
+  data_residency: {value: null, basis: unresolved, confirmation_status: unresolved}
+  credential_owner: {value: null, basis: unresolved, confirmation_status: unresolved}
+  credential_storage: {value: null, basis: unresolved, confirmation_status: unresolved}
+  timeout_seconds: {value: null, basis: unresolved, confirmation_status: unresolved}
+  retry_policy: {value: null, basis: unresolved, confirmation_status: unresolved}
+  latency_slo: {value: null, basis: unresolved, confirmation_status: unresolved}
+  cost_budget: {value: null, basis: unresolved, confirmation_status: unresolved}
+  availability_slo: {value: null, basis: unresolved, confirmation_status: unresolved}

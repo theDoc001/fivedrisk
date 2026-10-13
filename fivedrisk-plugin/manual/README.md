@@ -18,7 +18,10 @@ interpreter. This repository does not claim a published Claude marketplace entry
 ```bash
 PLUGIN_ROOT=/absolute/path/to/fivedrisk-plugin
 export FIVEDRISK_PYTHON=/absolute/path/to/.venv/bin/python
-PYTHON_BIN="$FIVEDRISK_PYTHON" bash "$PLUGIN_ROOT/skills/fivedrisk-setup/scripts/verify-install.sh"
+export FIVEDRISK_SURFACE=sdk-hook
+export FIVEDRISK_AUDIT_PATH=/absolute/path/to/fivedrisk-decisions.db
+PYTHON_BIN="$FIVEDRISK_PYTHON" FIVEDRISK_SURFACE="$FIVEDRISK_SURFACE" \
+  bash "$PLUGIN_ROOT/skills/fivedrisk-setup/scripts/verify-install.sh"
 claude --plugin-dir "$PLUGIN_ROOT"
 ```
 
@@ -27,6 +30,9 @@ Use `PLUGIN_ROOT` for manual verification before startup. Export the same verifi
 absolute interpreter as `FIVEDRISK_PYTHON` before activation. The launcher blocks with
 exit 2 when it is missing, relative, mismatched, or outside stable `>=0.7.1,<0.8.0`.
 It never falls back to `python`, `python3`, or PATH.
+`FIVEDRISK_AUDIT_PATH` must be an absolute path with a writable parent directory;
+the launcher blocks when it is absent or invalid. This reviewed hook command requires
+a POSIX shell. Native Windows without WSL is not supported in 0.7.1.
 
 The outer hook uses isolated Python before importing standard-library modules. The
 launcher then runs the installed package through an isolated bootstrap that checks
@@ -65,8 +71,8 @@ the operator-owned `.claude/settings.json`; do not enable duplicate integrations
 ```json
 {
   "hooks": {
-    "PreToolUse":  [{ "matcher": "*", "hooks": [{ "type": "command", "command": "\"<SELECTED_PYTHON>\" -I -m fivedrisk._bootstrap claude-hook" }] }],
-    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "\"<SELECTED_PYTHON>\" -I -m fivedrisk._bootstrap claude-hook" }] }]
+    "PreToolUse":  [{ "matcher": "*", "hooks": [{ "type": "command", "command": "\"<SELECTED_PYTHON>\" -I -m fivedrisk._bootstrap --policy \"<POLICY_PATH>\" --log-path \"<AUDIT_PATH>\" claude-hook" }] }],
+    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "\"<SELECTED_PYTHON>\" -I -m fivedrisk._bootstrap --policy \"<POLICY_PATH>\" --log-path \"<AUDIT_PATH>\" claude-hook" }] }]
   }
 }
 ```

@@ -140,14 +140,43 @@ def test_node_detector_rows_carry_the_selected_interpreter():
     for row in rows.values():
         assert sys.executable in row["wiring"]
         assert "FivedriskGateway({ command:" in row["wiring"]
+        assert row["wiring_import"].startswith("import {")
+        assert 'from "fivedrisk-gateway";' in row["wiring_import"]
+        assert "{name}" not in row["wiring"]
+    assert "guardVercelTool" in rows["Vercel AI SDK (Node)"]["wiring_import"]
+    assert "guardGenkitTool" in rows["Genkit (Node)"]["wiring_import"]
+    assert 'name: "my_tool"' in rows["Genkit (Node)"]["wiring"]
 
 
-def test_example_gate_runs_and_shows_both_bands():
+def test_detector_offers_generic_json_lines_gateway_for_other_hosts():
+    out = subprocess.run(
+        [sys.executable, str(DETECT)], capture_output=True, text=True, timeout=30
+    )
+    assert out.returncode == 0
+    assert "_bootstrap --policy policy.yaml" in out.stdout
+    assert "gateway stdio" in out.stdout
+    assert "JSON-lines" in out.stdout
+
+
+def test_skill_routes_python_and_non_python_custom_hosts_separately():
+    skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    adapters = (SKILL / "references" / "adapters.md").read_text(encoding="utf-8")
+    assert "**Custom Python**" in skill
+    assert "**Other languages / hosts**" in skill
+    assert "`_bootstrap gateway stdio`" in skill
+    assert "## Generic non-Python gateway" in adapters
+    assert "-I -m fivedrisk._bootstrap --policy policy.yaml" in adapters
+    assert "gateway stdio" in adapters
+    assert "JSON-lines" in adapters
+
+
+def test_example_gate_runs_and_shows_green_and_blocked_red(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(DEV)
+    env["FIVEDRISK_AUDIT_PATH"] = str(tmp_path / "example.db")
     out = subprocess.run(
         [sys.executable, str(SKILL / "scripts" / "example_gate.py")],
-        capture_output=True, text=True, timeout=30, env=env,
+        cwd=tmp_path, capture_output=True, text=True, timeout=30, env=env,
     )
     assert out.returncode == 0, out.stderr
     assert "GREEN" in out.stdout and "blocked:" in out.stdout
@@ -172,13 +201,14 @@ def test_skill_manifest_uses_supported_frontmatter_and_five_ordered_phases():
         if (match := re.match(r"^([a-z][a-z0-9_-]*):", line))
     }
     assert top_level <= {"name", "description", "license", "metadata"}
+    assert "  version: 0.7.1" in frontmatter
 
     phases = [
-        "## Phase 0: Deployment consultation",
-        "## Phase 1: Installation",
-        "## Phase 2: Configuration",
-        "## Phase 3: Verification",
-        "## Phase 4: Failure recovery",
+        "## Step 0: Deployment consultation",
+        "## Step 1: Installation",
+        "## Step 2: Configuration",
+        "## Step 3: Verification",
+        "## Step 4: Failure recovery",
     ]
     positions = [text.index(phase) for phase in phases]
     assert positions == sorted(positions)
@@ -262,9 +292,25 @@ def test_deployment_profile_template_is_schema_complete_for_both_sources(source_
     }
     assert set(profile["observer"]) == {
         "mode", "routed_ambiguities", "unavailable_disposition",
-        "thresholds_status", "evidence_status",
+        "thresholds_status", "evidence_status", "provider_model_version",
+        "execution_locality", "transmitted_fields", "retention_training_policy",
+        "data_residency", "credential_owner", "credential_storage",
+        "timeout_seconds", "retry_policy", "latency_slo", "cost_budget",
+        "availability_slo",
     }
     _assert_profile_contract(profile)
+
+
+def test_deployment_profile_template_fields_do_not_share_yaml_alias_state():
+    profile = yaml.safe_load(PROFILE_TEMPLATE.read_text(encoding="utf-8"))
+
+    profile["agent"]["mission_summary"]["value"] = "changed"
+    profile["tools"]["items"].append("changed")
+
+    assert profile["agent"]["framework"]["value"] is None
+    assert profile["agent"]["execution_boundary"]["value"] is None
+    assert profile["acceptance_cases"]["allowed"]["items"] == []
+    assert profile["observer"]["routed_ambiguities"]["items"] == []
 
 
 def _assert_fact(fact):
@@ -328,9 +374,16 @@ def _assert_profile_contract(profile):
         _assert_collection(items)
     for fact in profile["controls"].values():
         _assert_fact(fact)
-    for field in ("mode", "unavailable_disposition", "thresholds_status", "evidence_status"):
+    for field in (
+        "mode", "unavailable_disposition", "thresholds_status", "evidence_status",
+        "provider_model_version", "execution_locality", "retention_training_policy",
+        "data_residency", "credential_owner", "credential_storage",
+        "timeout_seconds", "retry_policy", "latency_slo", "cost_budget",
+        "availability_slo",
+    ):
         _assert_fact(profile["observer"][field])
     _assert_collection(profile["observer"]["routed_ambiguities"])
+    _assert_collection(profile["observer"]["transmitted_fields"])
 
     observer = profile["observer"]
     assert observer["mode"]["value"] in {None, "none", "general_llm", "typesafe_jev"}
@@ -413,6 +466,23 @@ def test_observer_contract_is_monotonic_fail_closed_and_design_only():
     assert "benchmark-only" in text
     assert "deterministic regular expressions" in text
     assert "thresholds remain `uncalibrated`" in text
+    for field in (
+        "provider", "model/version", "execution locality", "transmitted fields",
+        "retention/training policy", "data\nresidency", "credential owner",
+        "timeout", "retry", "latency", "cost", "availability",
+    ):
+        assert field in text
+
+
+def test_typesafe_observer_example_is_typed_calibrated_and_application_owned():
+    text = OBSERVER_OPTIONS.read_text(encoding="utf-8")
+    assert "from typesafe_sdk import Noul, NoulCriteria, TypeSafeClient" in text
+    assert 'instructions="Does this action require semantic escalation?"' in text
+    assert "criteria=NoulCriteria(" in text
+    assert 'response.answers["requires_escalation"].noul' in text
+    assert "representative labeled deployment cases" in text
+    assert "example thresholds are placeholders" in text
+    assert "Application code owns the threshold" in text
 
 
 def test_host_packaging_claims_keep_public_advice_separate_from_manual_hooks():
@@ -460,8 +530,8 @@ def test_skill_resolves_helpers_from_an_absolute_skill_root():
 
 def test_skill_verifies_provenance_before_any_package_execution():
     text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
-    install = text.split("## Phase 1: Installation", 1)[1].split(
-        "## Phase 2: Configuration", 1
+    install = text.split("## Step 1: Installation", 1)[1].split(
+        "## Step 2: Configuration", 1
     )[0]
     verify_position = install.index("verify-install.sh")
     assert "import fivedrisk" not in install[:verify_position]
@@ -491,6 +561,18 @@ def test_skill_stops_when_distribution_installation_is_unavailable():
     assert "user approval, repository trust, or commit/ref approval history" in text
     assert "distribution-recorded entrypoint for a non-editable installation" in text
     assert 'PYTHON_BIN="$PYTHON_BIN" bash "$SKILL_ROOT/scripts/verify-install.sh"' in text
+
+
+def test_public_docs_use_the_canonical_skills_cli_install_target():
+    command = "npx --yes skills@1.7.2 add . --skill fivedrisk-setup"
+    root_readme = (DEV / "README.md").read_text(encoding="utf-8")
+    plugin_readme = (DEV / "fivedrisk-plugin" / "README.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert root_readme.count(command) == 1
+    assert plugin_readme.count(command) == 1
+    assert "does not install the Python runtime" in plugin_readme
 
 
 @pytest.mark.parametrize(("relative", "content"), [
@@ -526,6 +608,7 @@ def test_instruction_population_gate_accepts_selected_interpreter(content, tmp_p
 def test_command_emitting_helpers_use_resolved_interpreter(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(DEV)
+    env["FIVEDRISK_AUDIT_PATH"] = str(tmp_path / "command-helper.db")
     detect = subprocess.run(
         [sys.executable, str(DETECT)], capture_output=True, text=True, timeout=30, env=env
     )
@@ -555,6 +638,8 @@ def test_bundled_helpers_run_from_an_unrelated_working_directory(tmp_path):
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     env["PYTHON_BIN"] = sys.executable
+    env["FIVEDRISK_SURFACE"] = "gate"
+    env["FIVEDRISK_AUDIT_PATH"] = str(tmp_path / "bundled-helper.db")
     commands = [
         [sys.executable, str(DETECT)],
         ["/bin/bash", str(VERIFY)],
@@ -569,10 +654,13 @@ def test_bundled_helpers_run_from_an_unrelated_working_directory(tmp_path):
     assert [result.returncode for result in results] == [0, 0, 0]
 
 
-def _run_verify(policy: Path | None, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _run_verify(
+    policy: Path | None, cwd: Path, surface: str = "gate"
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     env["PYTHON_BIN"] = sys.executable
+    env["FIVEDRISK_SURFACE"] = surface
     if policy is None:
         env.pop("FIVEDRISK_POLICY_PATH", None)
     else:
@@ -641,7 +729,9 @@ def test_verify_install_enforces_supported_stable_version(tmp_path, version, acc
         check=True, capture_output=True, text=True, timeout=30,
     ).stdout.strip())
     _fake_distribution(site_dir, editable=False, version=version)
-    run_env = {**os.environ, "PYTHON_BIN": str(python)}
+    run_env = {
+        **os.environ, "PYTHON_BIN": str(python), "FIVEDRISK_SURFACE": "gate"
+    }
     run_env.pop("PYTHONPATH", None)
     out = subprocess.run(
         ["/bin/bash", str(VERIFY)], cwd=tmp_path, capture_output=True,
@@ -682,7 +772,8 @@ def test_documented_claude_hook_quotes_interpreter_paths_with_spaces(tmp_path):
         )
         assert out.returncode == 0, out.stdout + out.stderr
         assert arg_log.read_text().splitlines() == [
-            "-I", "-m", "fivedrisk._bootstrap", "claude-hook",
+            "-I", "-m", "fivedrisk._bootstrap", "--policy", "<POLICY_PATH>",
+            "--log-path", "<AUDIT_PATH>", "claude-hook",
         ]
 
 
@@ -695,7 +786,10 @@ def test_verify_install_ignores_side_effecting_cwd_and_pythonpath_shadow(tmp_pat
         f"Path({str(marker)!r}).write_text('ran')\n",
         encoding="utf-8",
     )
-    env = {**os.environ, "PYTHON_BIN": sys.executable, "PYTHONPATH": str(tmp_path)}
+    env = {
+        **os.environ, "PYTHON_BIN": sys.executable, "PYTHONPATH": str(tmp_path),
+        "FIVEDRISK_SURFACE": "gate",
+    }
     out = subprocess.run(
         ["/bin/bash", str(VERIFY)], cwd=tmp_path, capture_output=True,
         text=True, timeout=30, env=env,
@@ -714,7 +808,11 @@ def test_documented_isolated_example_ignores_hostile_cwd_and_pythonpath(tmp_path
         f"Path({str(marker)!r}).write_text('ran')\n",
         encoding="utf-8",
     )
-    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(tmp_path),
+        "FIVEDRISK_AUDIT_PATH": str(tmp_path / "isolated-example.db"),
+    }
     out = subprocess.run(
         [sys.executable, "-I", str(SKILL / "scripts" / "example_gate.py")],
         cwd=tmp_path,
@@ -730,7 +828,10 @@ def test_documented_isolated_example_ignores_hostile_cwd_and_pythonpath(tmp_path
 
 def test_verify_install_passes_from_the_source_checkout(tmp_path):
     marker = tmp_path / "unexpected-marker"
-    env = {**os.environ, "PYTHON_BIN": sys.executable, "PYTHONPATH": str(tmp_path)}
+    env = {
+        **os.environ, "PYTHON_BIN": sys.executable, "PYTHONPATH": str(tmp_path),
+        "FIVEDRISK_SURFACE": "gate",
+    }
     out = subprocess.run(
         ["/bin/bash", str(VERIFY)], cwd=DEV, capture_output=True,
         text=True, timeout=30, env=env,
@@ -752,7 +853,9 @@ def test_verify_install_rejects_editable_distribution(tmp_path):
         check=True, capture_output=True, text=True, timeout=30,
     ).stdout.strip())
     _fake_distribution(site_dir, editable=True)
-    env = {**os.environ, "PYTHON_BIN": str(python)}
+    env = {
+        **os.environ, "PYTHON_BIN": str(python), "FIVEDRISK_SURFACE": "gate"
+    }
     env.pop("PYTHONPATH", None)
     out = subprocess.run(
         ["/bin/bash", str(VERIFY)], cwd=tmp_path, capture_output=True,
@@ -775,7 +878,9 @@ def test_verify_install_rejects_missing_distribution_metadata(tmp_path):
         check=True, capture_output=True, text=True, timeout=30,
     ).stdout.strip())
     _fake_distribution(site_dir, editable=False, with_metadata=False)
-    env = {**os.environ, "PYTHON_BIN": str(python)}
+    env = {
+        **os.environ, "PYTHON_BIN": str(python), "FIVEDRISK_SURFACE": "gate"
+    }
     env.pop("PYTHONPATH", None)
     out = subprocess.run(
         ["/bin/bash", str(VERIFY)], cwd=tmp_path, capture_output=True,
@@ -807,6 +912,16 @@ def test_verify_install_requires_explicit_interpreter():
     )
     assert out.returncode != 0
     assert "PYTHON_BIN" in out.stderr
+
+
+def test_verify_install_requires_explicit_surface():
+    env = {**os.environ, "PYTHON_BIN": sys.executable}
+    env.pop("FIVEDRISK_SURFACE", None)
+    out = subprocess.run(
+        ["/bin/bash", str(VERIFY)], capture_output=True, text=True, timeout=30, env=env
+    )
+    assert out.returncode != 0
+    assert "FIVEDRISK_SURFACE" in out.stderr
 
 
 def test_verify_install_parses_built_in_policy_when_no_path_is_set(tmp_path):
@@ -845,9 +960,21 @@ def test_verify_install_surfaces_and_rejects_policy_warnings(tmp_path):
     assert "All required checks passed" not in combined
 
 
+def test_verify_install_is_surface_aware_for_identity_policy(tmp_path):
+    policy = tmp_path / "identity-policy.yaml"
+    policy.write_text("version: 1\nidentity_required: true\n", encoding="utf-8")
+    gate = _run_verify(policy, tmp_path, surface="gate")
+    gateway = _run_verify(policy, tmp_path, surface="gateway")
+    assert gate.returncode == 0, gate.stdout + gate.stderr
+    assert "! warning:" not in gate.stdout
+    assert gateway.returncode != 0
+    assert "identity_required" in gateway.stdout + gateway.stderr
+
+
 def test_example_gate_is_safe_to_repeat(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(DEV)
+    env.pop("FIVEDRISK_AUDIT_PATH", None)
     command = [sys.executable, str(SKILL / "scripts" / "example_gate.py")]
     first = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=30, env=env)
     second = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=30, env=env)
@@ -856,7 +983,8 @@ def test_example_gate_is_safe_to_repeat(tmp_path):
     assert (tmp_path / "fivedrisk_decisions.db").is_file()
 
 
-def test_example_gate_fails_if_destructive_call_is_not_denied(monkeypatch):
+def test_example_gate_fails_if_destructive_call_is_not_denied(monkeypatch, tmp_path):
+    monkeypatch.setenv("FIVEDRISK_AUDIT_PATH", str(tmp_path / "denial.db"))
     mod = _load_example()
     monkeypatch.setattr(mod, "run_shell", lambda command: f"unexpected execution: {command}")
     with pytest.raises(RuntimeError, match="destructive simulated call was not denied"):
@@ -867,6 +995,7 @@ def test_example_gate_rejects_an_explicit_missing_policy(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(DEV)
     env["FIVEDRISK_POLICY_PATH"] = str(tmp_path / "missing-policy.yaml")
+    env["FIVEDRISK_AUDIT_PATH"] = str(tmp_path / "missing-policy.db")
     out = subprocess.run(
         [sys.executable, str(SKILL / "scripts" / "example_gate.py")],
         cwd=tmp_path,

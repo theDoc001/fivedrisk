@@ -43,7 +43,7 @@ A general LLM guardrail suite. A semantic content scanner. A replacement for one
 
 ```bash
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -m pip install "fivedrisk>=0.7.1,<0.8.0"
 "$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 ```
 
@@ -117,13 +117,13 @@ fivedrisk is one layer in a defence-in-depth AI governance stack.
 
 ```bash
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-"$PYTHON_BIN" -m pip install "fivedrisk>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -m pip install "fivedrisk>=0.7.1,<0.8.0"
 "$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 ```
 
 For LangGraph integration:
 ```bash
-"$PYTHON_BIN" -m pip install "fivedrisk[langgraph]>=0.7.1,<0.8.0"
+"$PYTHON_BIN" -I -m pip install "fivedrisk[langgraph]>=0.7.1,<0.8.0"
 "$PYTHON_BIN" -I -c 'import importlib.machinery as m, importlib.metadata as d, pathlib, sys; x=d.distribution("fivedrisk"); r=next((p for p in x.files or () if str(p).replace("\\","/")=="fivedrisk/__init__.py"), None); r is not None or sys.exit("fivedrisk distribution has no recorded package"); e=pathlib.Path(x.locate_file(r)).resolve(strict=True); s=m.PathFinder.find_spec("fivedrisk",[str(e.parent.parent)]); a=pathlib.Path(s.origin).resolve(strict=True) if s and s.origin else None; a==e or sys.exit("fivedrisk provenance mismatch"); print(f"verified fivedrisk {x.version}: {e}")'
 ```
 
@@ -333,7 +333,10 @@ Non-Python hosts (Node, Go, Rust, the OpenClaw plugin) call the engine over JSON
 "$PYTHON_BIN" -I -m fivedrisk._bootstrap gateway score --policy policy.yaml   # one-shot
 ```
 
-**The gateway has governance parity with the SDK hooks.** It classifies, scores, bands, logs, and also reuses the input layers: prompt-injection scanning and policy-driven semantic review run before scoring (a hit blocks with `band: "RED"`), and Markov session-drift is applied after scoring (drift accumulates across calls on a `stdio` connection). The one layer that stays SDK/configure-side is the destination allow/deny policy — it's driven by `configure()` arguments, not the policy file the gateway loads.
+The gateway classifies, scans input, scores, bands, logs, and optionally applies session
+drift. It fails closed when a policy enables identity, retry, or token-budget admission,
+which protocol 1 cannot enforce. Destination allow/deny configured through Python
+`configure()` is also outside this surface. See [`docs/gateway-protocol.md`](../docs/gateway-protocol.md).
 
 ---
 

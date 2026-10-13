@@ -9,6 +9,9 @@ import subprocess
 import textwrap
 from pathlib import Path
 
+from fivedrisk.policy import load_policy
+from fivedrisk.schema import Action, Band
+from fivedrisk.scorer import score
 from fivedrisk.cli import (
     _floor_control_warnings,
     _floor_unknown_key_warnings,
@@ -91,6 +94,69 @@ def test_every_public_install_workflow_verifies_provenance_first():
             if first_package_execution and min(check_positions) > first_package_execution.start():
                 offenders.append(f"{path.relative_to(ROOT)} block {index} executes first")
     assert not offenders, f"install workflows without provenance-first verification: {offenders}"
+
+
+def test_public_python_install_commands_use_isolated_mode():
+    offenders = []
+    for path in _public_instruction_files():
+        text = path.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if re.search(r"-m\s+pip\s+install\s+[\"']?fivedrisk", line):
+                if " -I -m pip install " not in line:
+                    offenders.append(f"{path.relative_to(ROOT)}: {line.strip()}")
+    assert not offenders, f"non-isolated fivedrisk installs: {offenders}"
+
+
+def test_gateway_claims_are_bounded_and_protocol_is_public():
+    root = (ROOT / "README.md").read_text(encoding="utf-8")
+    package = (ROOT / "fivedrisk" / "README.md").read_text(encoding="utf-8")
+    protocol = (ROOT / "docs" / "gateway-protocol.md").read_text(encoding="utf-8")
+    combined = root + package
+    assert "governance parity" not in combined.lower()
+    assert "| Surface | Input scans | Session drift |" in root
+    for required in (
+        "protocol_version", "engine_version", "unique `id`", "Exact `ORANGE`",
+        "timeout", "EOF", "UnsupportedPolicyControls", "--log-path",
+    ):
+        assert required in protocol
+
+
+def test_public_install_commands_pin_skill_cli_source_and_node_client():
+    prose = "\n".join(
+        path.read_text(encoding="utf-8") for path in _public_instruction_files()
+    )
+    assert "npx skills add" not in prose
+    assert "npx --yes skills add" not in prose
+    assert "skills@1.7.2" in prose
+    assert "--branch v0.7.1" in prose
+    assert "npm install fivedrisk-gateway\n" not in prose
+    assert "fivedrisk-gateway@0.7.1" in prose
+
+
+def test_framework_and_script_support_claims_are_bounded():
+    root = (ROOT / "README.md").read_text(encoding="utf-8")
+    plugin = (ROOT / "fivedrisk-plugin" / "README.md").read_text(encoding="utf-8")
+    adapters = (
+        ROOT / "fivedrisk-plugin" / "skills" / "fivedrisk-setup" /
+        "references" / "adapters.md"
+    ).read_text(encoding="utf-8")
+    assert "provisional adapters" in root
+    assert "tested with local fakes" in adapters
+    assert "Native Windows without WSL is not supported" in plugin
+
+
+def test_skill_shell_examples_do_not_use_angle_bracket_assignments():
+    skill = (
+        ROOT / "fivedrisk-plugin" / "skills" / "fivedrisk-setup" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "FIVEDRISK_SURFACE=<" not in skill
+
+
+def test_public_presets_do_not_document_removed_configure_arguments():
+    preset = (
+        ROOT / "fivedrisk" / "policies" / "presets" / "customer_data.yaml"
+    ).read_text(encoding="utf-8")
+    assert "enforce_destination_policy" not in preset
 
 
 def test_python_ci_exercises_the_noneditable_installed_distribution():
@@ -194,14 +260,45 @@ def test_portable_and_codex_manifests_share_identity_and_are_host_honest():
 
 def test_plugin_auto_discovers_only_the_consultant_skill():
     skills_root = ROOT / "fivedrisk-plugin" / "skills"
-    skills = sorted(path.parent.name for path in skills_root.glob("*/SKILL.md"))
-    assert skills == ["fivedrisk-setup"]
+    skill_files = sorted(skills_root.glob("*/SKILL.md"))
+    assert [path.parent.name for path in skill_files] == ["fivedrisk-setup"]
+    frontmatter = skill_files[0].read_text(encoding="utf-8").split("---", 2)[1]
+    assert "  version: 0.7.1" in frontmatter
+    assert "internal:" not in frontmatter
     shipped_text = "\n".join(
         path.read_text(encoding="utf-8")
         for path in (ROOT / "fivedrisk-plugin").rglob("*.md")
     ).lower()
     assert "composite >= 8.0" not in shipped_text
     assert "data sensitivity: 1.0" not in shipped_text
+
+
+def test_plugin_starter_policy_explicitly_uses_default_folded_yellow_behavior():
+    path = ROOT / "fivedrisk-plugin" / "policy.yaml"
+    policy = load_policy(str(path))
+    moderate = Action(
+        tool_name="TestTool",
+        data_sensitivity=0,
+        tool_privilege=1,
+        reversibility=2,
+        external_impact=2,
+        autonomy_context=2,
+    )
+
+    assert "enable_yellow_band: false" in path.read_text(encoding="utf-8")
+    assert policy.enable_yellow_band is False
+    assert score(moderate, policy).band is Band.GREEN
+    policy.enable_yellow_band = True
+    assert score(moderate, policy).band is Band.YELLOW
+
+
+def test_readme_does_not_present_an_observer_as_a_shipped_default_route():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    opening = readme.split("## What it scores", 1)[0]
+
+    assert "YELLOW ─► LLM scanner" not in opening
+    assert "does not bundle or invoke a semantic scanner" in opening
+    assert "YELLOW is opt-in" in opening
 
 
 def test_openai_presentation_and_onboarding_are_complete_in_both_formats():
@@ -232,7 +329,7 @@ def test_openai_presentation_and_onboarding_are_complete_in_both_formats():
 
 def test_publisher_builds_both_plugin_variants_before_checksums_and_attestation():
     publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text()
-    build = _workflow_run_block(publish, "Build one reproducible, checksum-verified artifact set")
+    build = _workflow_run_block(publish, "Build one source-bound, checksum-verified artifact set")
     assert build.count('--git-ref "$GITHUB_SHA"') == 2
     for variant in ("public", "manual"):
         assert f"--variant {variant}" in build
@@ -240,6 +337,28 @@ def test_publisher_builds_both_plugin_variants_before_checksums_and_attestation(
     assert build.index("--variant manual") < build.index("tools/artifact_checksums.py --write")
     assert 'subject-path: "dist/*"' in publish
     assert 'gh release create "v$VERSION" dist/*' in publish
+
+
+def test_external_github_actions_are_pinned_to_full_commit_shas():
+    offenders = []
+    for workflow in (ROOT / ".github" / "workflows").glob("*.yml"):
+        for line in workflow.read_text(encoding="utf-8").splitlines():
+            match = re.search(r"\buses:\s*([^\s#]+)", line)
+            if not match or match.group(1).startswith("./"):
+                continue
+            reference = match.group(1).rsplit("@", 1)[-1]
+            if not re.fullmatch(r"[0-9a-f]{40}", reference):
+                offenders.append(f"{workflow.name}: {line.strip()}")
+    assert not offenders, f"mutable external action refs: {offenders}"
+
+
+def test_public_reproducibility_claims_are_bounded():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    controls = (ROOT / "docs" / "release-controls.md").read_text(encoding="utf-8")
+    requirements = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
+    assert "two reproducible measurement surfaces" not in readme
+    assert "one reproducible artifact set" not in controls
+    assert "NOT A COMPLETE LOCK" in requirements
 
 
 def test_typescript_readme_exports_a_canonical_absolute_interpreter():
@@ -300,12 +419,12 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     assert "tools/normalize_sdist.py" in publish
     assert "tools/build_plugin_archive.py" in publish
     assert '--git-ref "$GITHUB_SHA"' in publish
-    assert "actions/attest-build-provenance@v2" in publish
+    assert "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be" in publish
     assert publish.index("--action package-publish") < publish.index(
         "pypa/gh-action-pypi-publish"
     )
     assert publish.index("--action attestation") < publish.index(
-        "actions/attest-build-provenance@v2"
+        "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be"
     )
     assert publish.index("--action tag") < publish.index('git push origin "v$VERSION"')
     assert publish.index("--action github-release") < publish.index("gh release create")
@@ -443,7 +562,7 @@ def test_benchmark_workflow_pairs_frozen_base_and_candidate():
     assert "--runs 1 --json" in bench
     assert "aggregate_paired_results.py" in bench
     assert "check_regression.py" in bench
-    assert "actions/upload-artifact@v4" in bench
+    assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in bench
     assert 'cp "$BASE_TREE/benchmarks/bench_ci.py"' in bench
     assert 'cp "$BASE_TREE/benchmarks/check_regression.py"' in bench
     assert 'cp "$BASE_TREE/benchmarks/aggregate_paired_results.py"' in bench

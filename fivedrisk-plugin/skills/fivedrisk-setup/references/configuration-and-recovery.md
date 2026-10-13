@@ -34,7 +34,9 @@ loader so one implementation decides each invariant.
    shipped defaults when no preset is a defensible match.
 6. Configure an explicit durable audit path. Treat a temporary fallback warning as a
    deployment finding, not a successful durable setup.
-7. Validate the policy. Resolve both validation errors and warnings before activation.
+7. Validate the policy with `--surface` matching the real adapter. Resolve both validation errors and warnings
+   before activation. Limited surfaces fail closed when
+   a policy requests admission controls they cannot enforce.
 8. Wire one adapter once, at the actual pre-execution boundary.
 
 The public ChatGPT/Codex skill is advisory and does not activate host lifecycle hooks.
@@ -46,6 +48,9 @@ policy. Manual hook packages are not eligible for the public plugin directory.
 Do not silently enable a human-approval flag. If the host has no real approval channel,
 ORANGE stays blocked. When the host can provide a stable session identifier, require it
 so sequence tracking does not silently reset per call.
+Pass the same explicit audit path into the adapter or gateway and into every `log` or
+`stats` verification command. A successful query of a different default database is not
+deployment evidence.
 
 ## Change discipline
 
