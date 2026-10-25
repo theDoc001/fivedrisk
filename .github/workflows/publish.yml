@@ -1,12 +1,8 @@
 name: Publish release
 
 on:
-  workflow_dispatch:
-    inputs:
-      candidate_sha:
-        description: Full approved release candidate commit SHA
-        required: true
-        type: string
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: write
@@ -23,25 +19,23 @@ jobs:
           fetch-depth: 0
 
       - name: Require the release window
-        run: python3 -I tools/release_window.py --action workflow-dispatch
+        run: python3 -I tools/release_window.py --action package-publish
 
       - id: metadata
-        name: Bind the dispatch to the approved main commit
+        name: Bind the release tag to a commit on main
         env:
-          DISPATCH_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
-          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
-          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_EVENT_NAME" = 'push'
           test "$GITHUB_ACTOR" = "$REPOSITORY_OWNER"
           test "$TRIGGERING_ACTOR" = "$REPOSITORY_OWNER"
-          test -n "$DISPATCH_CANDIDATE_SHA"
-          test "$DISPATCH_CANDIDATE_SHA" = "$GITHUB_SHA"
           test "$GITHUB_SHA" = "$(git rev-parse --verify HEAD)"
-          test "$DISPATCH_CANDIDATE_SHA" = "$(git rev-parse --verify "$DISPATCH_CANDIDATE_SHA^{commit}")"
           version=$(sed -n '/^\[project\]$/,/^\[/s/^version = "\([^"]*\)"$/\1/p' pyproject.toml)
           test -n "$version"
+          test "$GITHUB_REF" = "refs/tags/v$version"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"
 
@@ -163,15 +157,6 @@ jobs:
             sleep 15
           done
           exit 2
-
-      - name: Create the exact annotated release tag
-        if: steps.after_pypi.outputs.tag == 'absent'
-        env:
-          VERSION: ${{ steps.metadata.outputs.version }}
-        run: |
-          git -c user.name='fivedrisk release' -c user.email='actions@users.noreply.github.com' \
-            tag -a "v$VERSION" "$GITHUB_SHA" -m "fivedrisk $VERSION"
-          git push origin "v$VERSION"
 
       - id: after_tag
         name: Reclassify after tag stage

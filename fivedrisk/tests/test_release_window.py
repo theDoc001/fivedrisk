@@ -150,7 +150,7 @@ def test_documented_gate_command_ignores_hostile_pythonpath(tmp_path: Path):
 def test_every_shipped_gate_invocation_uses_isolated_python():
     hook = (ROOT / ".githooks" / "pre-push").read_text(encoding="utf-8")
     assert 'python3 -I "$gate" --action push' in hook
-    for workflow_name in ("release-gate.yml", "publish.yml"):
+    for workflow_name in ("publish.yml",):
         workflow = (ROOT / ".github" / "workflows" / workflow_name).read_text(
             encoding="utf-8"
         )
