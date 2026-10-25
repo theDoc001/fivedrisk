@@ -117,7 +117,7 @@ Install the advisory setup skill directly from this public repository with the
 [Skills CLI](https://www.skills.sh/docs/cli):
 
 ```bash
-git clone --branch v0.7.1 --depth 1 https://github.com/theDoc001/fivedrisk.git
+git clone --branch v0.7.2 --depth 1 https://github.com/theDoc001/fivedrisk.git
 cd fivedrisk
 npx --yes skills@1.7.2 add . --skill fivedrisk-setup
 ```

@@ -1,9 +1,9 @@
 # Manual host integration — not a public-directory artifact
 
 This guide, the Claude manifest, hook configuration, launcher, and starter policy are
-included only in `fivedrisk-plugin-manual-0.7.1.zip` (and the source checkout). Any ZIP
+included only in `fivedrisk-plugin-manual-0.7.2.zip` (and the source checkout). Any ZIP
 containing lifecycle hooks is not eligible for the public plugin directory. The
-`fivedrisk-plugin-public-0.7.1.zip` skill is advisory and contains none of those files.
+`fivedrisk-plugin-public-0.7.2.zip` skill is advisory and contains none of those files.
 
 Manually installed Codex desktop plugins support their own lifecycle hooks when
 available, but this release's reviewed launcher and payload protocol are Claude-specific.
@@ -32,7 +32,7 @@ exit 2 when it is missing, relative, mismatched, or outside stable `>=0.7.1,<0.8
 It never falls back to `python`, `python3`, or PATH.
 `FIVEDRISK_AUDIT_PATH` must be an absolute path with a writable parent directory;
 the launcher blocks when it is absent or invalid. This reviewed hook command requires
-a POSIX shell. Native Windows without WSL is not supported in 0.7.1.
+a POSIX shell. Native Windows without WSL is not supported in 0.7.2.
 
 The outer hook uses isolated Python before importing standard-library modules. The
 launcher then runs the installed package through an isolated bootstrap that checks

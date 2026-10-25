@@ -41,7 +41,7 @@ calibration, failures, latency, cost, and escalation quality before relying on i
 ### TypeSafe Jev (`typesafe_jev`)
 
 Use a small typed `Noul`, `Choice`, or `Score` judgment with explicit probabilities.
-Application code—not the model—owns routing, precedence, thresholds, and fail-closed
+Application code, not the model, owns routing, precedence, thresholds, and fail-closed
 behavior. Independent judgments can be batched in one request. Typed output is not proof
 of correctness, and thresholds remain `uncalibrated` until evaluated on representative
 deployment cases.
@@ -77,6 +77,26 @@ record false allows and unnecessary escalations, and keep the state
 minimal and redacted. Wrap the call so timeout, API error, malformed output, or missing
 credentials route to human approval or block as specified above. Never send secrets or
 raw system prompts merely to make the observer work.
+
+### Two-tier cascade (`jev_then_llm`)
+
+Use typed Jev judgments as the first tier and a general observer LLM as the second tier,
+only for routed ambiguities the first tier leaves unresolved. Name in the profile which
+Jev outcome hands an action to the second tier; every other outcome is final.
+
+- Precedence does not change: `final severity = max(deterministic severity, tier-1
+  escalation, tier-2 escalation)`. Either tier can raise severity. Neither can lower it.
+- Tier 2 never reviews an action tier 1 already escalated, and never sees fields tier 1
+  did not receive.
+- A failure in either tier (timeout, malformed output, unavailability, exhausted budget)
+  routes to human approval, or blocks when no real approval channel exists. It never
+  falls through to the next tier as if it were an allow.
+- Calibrate each tier separately and record its own false allows and unnecessary
+  escalations. Two uncalibrated tiers are not safer than one.
+- Cost and latency add up: routed actions may pay for two inferences. Budget both.
+
+Neither tier ships with fivedrisk. The cascade is a deployment design that application
+code implements around the deterministic gate.
 
 ## Security, latency, and compute claims
 

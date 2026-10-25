@@ -1,7 +1,7 @@
 {
   "name": "fivedrisk",
   "description": "5D Risk Governance Engine for Claude Code. A deterministic all-tool PreToolUse hook scores each call on 5 dimensions (Data, Tool, Reversibility, External, Autonomy): GREEN/YELLOW allow, ORANGE emits Claude's structured ask decision, and RED denies. An all-tool PostToolUse hook scans output aliases for leakage/injection-echo. Every decision is logged to a local SQLite audit trail. No LLM in the decision path. Hooks require an explicit verified FIVEDRISK_PYTHON; custom policies use FIVEDRISK_POLICY_PATH.",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "author": {
     "name": "Loren",
     "url": "https://langoni.me"

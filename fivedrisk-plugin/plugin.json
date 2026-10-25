@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "fivedrisk",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Deployment-specific 5D risk profiling, setup, verification, and recovery guidance for AI-agent action governance.",
   "author": {
     "name": "Loren Angoni",

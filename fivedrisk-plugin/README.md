@@ -17,8 +17,8 @@ the same consultant skill, references, examples, and installation/verification h
 
 | Artifact | Purpose | Enforcement boundary |
 |---|---|---|
-| `fivedrisk-plugin-public-0.7.1.zip` | Hooks-free ChatGPT/Codex public-directory submission candidate | Advisory only; no automatic host enforcement |
-| `fivedrisk-plugin-manual-0.7.1.zip` | Manually reviewed local integration | Includes the reviewed Claude-specific hooks; requires verified runtime setup |
+| `fivedrisk-plugin-public-0.7.2.zip` | Hooks-free ChatGPT/Codex public-directory submission candidate | Advisory only; no automatic host enforcement |
+| `fivedrisk-plugin-manual-0.7.2.zip` | Manually reviewed local integration | Includes the reviewed Claude-specific hooks; requires verified runtime setup |
 
 Skill execution is advisory and does not intercept tool calls. In ChatGPT, Codex, and
 other compatible hosts, installing the public artifact does not install the Python
@@ -45,13 +45,13 @@ Install the advisory setup skill directly from this public repository with the
 [Skills CLI](https://www.skills.sh/docs/cli):
 
 ```bash
-git clone --branch v0.7.1 --depth 1 https://github.com/theDoc001/fivedrisk.git
+git clone --branch v0.7.2 --depth 1 https://github.com/theDoc001/fivedrisk.git
 cd fivedrisk
 npx --yes skills@1.7.2 add . --skill fivedrisk-setup
 ```
 
 The packaged verifier and manual Claude hook commands require a POSIX environment with
-Bash. Native Windows without WSL is not supported by those scripts in 0.7.1.
+Bash. Native Windows without WSL is not supported by those scripts in 0.7.2.
 
 This installs the consultant skill. It does not install the Python runtime or
 activate a hook in the agent's execution path.
