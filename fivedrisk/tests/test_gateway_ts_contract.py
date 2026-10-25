@@ -8,6 +8,7 @@ would break the TS client fails HERE, in the Python suite, instead of silently i
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import os
 import subprocess
@@ -137,7 +138,7 @@ def test_isolated_gateway_bootstrap_ignores_hostile_cwd_and_pythonpath(tmp_path)
     marker = tmp_path / "shadow-ran"
     shadow = tmp_path / "fivedrisk"
     shadow.mkdir()
-    (shadow / "__init__.py").write_text('__version__ = "0.7.1"\n')
+    (shadow / "__init__.py").write_text('__version__ = "9.9.9-shadow"\n')
     (shadow / "_bootstrap.py").write_text(
         "from pathlib import Path\n"
         f"Path({str(marker)!r}).write_text('ran')\n"
@@ -157,6 +158,7 @@ def test_isolated_gateway_bootstrap_ignores_hostile_cwd_and_pythonpath(tmp_path)
     stdout, stderr = proc.communicate(request, timeout=30)
     assert proc.returncode == 0, stderr
     lines = [json.loads(line) for line in stdout.splitlines() if line.strip()]
-    assert lines[0]["engine_version"] == "0.7.1"
+    assert lines[0]["engine_version"] == importlib.metadata.version("fivedrisk")
+    assert lines[0]["engine_version"] != "9.9.9-shadow"
     assert lines[1]["band"] == "RED"
     assert not marker.exists()
