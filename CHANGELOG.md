@@ -5,6 +5,18 @@ All notable changes to **fivedrisk** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [0.7.2] - 2026-10-25
+
+- Setup skill copy rewritten for production hardening: deterministic red lines, optional
+  observer tiers that can only escalate, and human approval, in that order.
+- New observer design `jev_then_llm`: typed TypeSafe Jev judgments first, a general LLM
+  only for what remains ambiguous. Either tier can raise severity, neither can lower it,
+  and a failure in either tier routes to human approval or blocks. Design guidance only;
+  no observer runtime ships.
+- Release documentation describes the publication window without schedule details.
+- Plugin manifests, release ZIP names, and install references move to 0.7.2. No runtime
+  behavior changes from 0.7.1.
+
 ## [0.7.1] - 2026-10-06
 
 > ## 🔴 SECURITY RELEASE. Upgrade integrations to 0.7.1.

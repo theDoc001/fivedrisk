@@ -1,18 +1,38 @@
 ---
 name: fivedrisk-setup
 description: >
-  Design a deployment-specific 5D risk profile, then install, configure, verify,
-  or recover the fivedrisk action-policy gate for an AI agent. Use when eliciting
-  an agent's goals and likely actions, comparing deterministic-only governance
-  with an observer LLM or TypeSafe Jev, wiring a supported framework, validating
-  a policy, proving a gate works end to end, or diagnosing a partial setup.
+  Production-harden an AI agent's tool calls with an open, deterministic-first
+  governance policy. Use when hardening an agent that can move money, touch data,
+  change infrastructure, or act on identities: turn its redacted system prompt or
+  goals into a reviewable 5D policy, enforce deterministic red lines that block
+  before execution, route ambiguous actions through an optional two-tier observer
+  cascade (typed TypeSafe Jev judgments, then a general LLM) that can only escalate,
+  and hold high-consequence actions for human approval. Covers profiling, policy
+  authoring, adapter wiring, permit/hold/block verification, and recovery.
 license: Apache-2.0
 metadata:
-  version: 0.7.1
+  version: 0.7.2
   homepage: https://github.com/theDoc001/fivedrisk
 ---
 
 # fivedrisk setup skill
+
+For AI engineers and coding agents taking an agent to production where its actions have
+consequences.
+
+The skill turns what your agent is for into an open policy, then puts that policy in
+front of every tool call. Three layers, in a fixed order:
+
+1. **Red lines.** Deterministic. A declared prohibition blocks before execution, and no
+   model can talk it down.
+2. **Observer tiers, optional.** A typed Jev judgment first, a general LLM for what is
+   still ambiguous. Observers escalate; they never approve.
+3. **Human approval.** High-consequence actions wait for a person. With no real approval
+   channel, the action blocks.
+
+The tradeoff: each observer tier adds latency and inference cost, and its thresholds mean
+nothing until you calibrate them on your own cases. Deterministic-only is the cheap,
+boring default, and often the right one.
 
 Use this playbook as a deployment consultant first and an installer second. It creates a
 reviewable deployment profile for the actual agent, then guides the operator in placing
@@ -71,8 +91,10 @@ and `confirmation_status`; see the intake reference for the allowed states.
 Ask which observer design the user wants evaluated:
 
 - `none`: deterministic 5D only;
-- `general_llm`: a probabilistic observer for explicitly routed ambiguities; or
-- `typesafe_jev`: typed probabilistic judgments using TypeSafe Jev/System One.
+- `general_llm`: a probabilistic observer for explicitly routed ambiguities;
+- `typesafe_jev`: typed probabilistic judgments using TypeSafe Jev/System One; or
+- `jev_then_llm`: a two-tier cascade, typed Jev judgments first and a general LLM only
+  for ambiguities Jev leaves unresolved.
 
 Explain the security and performance trade-offs with
 [references/observer-options.md](references/observer-options.md). Do not imply that an
@@ -237,7 +259,7 @@ actual agent path blocks the denied case before its executor runs and records th
 decision. If any check fails, do not report a partial setup as complete.
 
 The packaged verifier requires Bash and a POSIX environment. Native Windows without
-WSL is outside the 0.7.1 script contract.
+WSL is outside the 0.7.2 script contract.
 
 ## Step 4: Failure recovery
 

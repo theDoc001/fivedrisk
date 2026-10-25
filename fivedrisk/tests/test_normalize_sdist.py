@@ -149,7 +149,7 @@ def test_sdist_preserves_directories_and_pax_long_unicode_names(tmp_path: Path):
 
 
 def test_current_built_sdist_remains_normalizable(tmp_path: Path):
-    built = ROOT / "dist/fivedrisk-0.7.1.tar.gz"
+    built = ROOT / "dist/fivedrisk-0.7.2.tar.gz"
     if not built.is_file():
         pytest.skip("no local release build")
     path = tmp_path / built.name

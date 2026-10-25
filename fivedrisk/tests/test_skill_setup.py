@@ -201,7 +201,7 @@ def test_skill_manifest_uses_supported_frontmatter_and_five_ordered_phases():
         if (match := re.match(r"^([a-z][a-z0-9_-]*):", line))
     }
     assert top_level <= {"name", "description", "license", "metadata"}
-    assert "  version: 0.7.1" in frontmatter
+    assert "  version: 0.7.2" in frontmatter
 
     phases = [
         "## Step 0: Deployment consultation",
@@ -386,7 +386,7 @@ def _assert_profile_contract(profile):
     _assert_collection(profile["observer"]["transmitted_fields"])
 
     observer = profile["observer"]
-    assert observer["mode"]["value"] in {None, "none", "general_llm", "typesafe_jev"}
+    assert observer["mode"]["value"] in {None, "none", "general_llm", "typesafe_jev", "jev_then_llm"}
     assert observer["unavailable_disposition"]["value"] in {"human_approval", "block"}
     approval = profile["controls"]["approval_channel"]
     if observer["unavailable_disposition"]["value"] == "human_approval":

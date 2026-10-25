@@ -23,7 +23,7 @@ PYTHON_BIN="$("$PYTHON_BIN" -I -c 'import sys; print(sys.executable)')"
 export FIVEDRISK_PYTHON="$PYTHON_BIN"
 
 # Node side (this client):
-npm install fivedrisk-gateway@0.7.1
+npm install fivedrisk-gateway@0.7.2
 ```
 
 The client has no PATH-based Python fallback. `command` is required, and startup

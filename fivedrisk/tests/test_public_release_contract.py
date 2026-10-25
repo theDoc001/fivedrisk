@@ -128,9 +128,9 @@ def test_public_install_commands_pin_skill_cli_source_and_node_client():
     assert "npx skills add" not in prose
     assert "npx --yes skills add" not in prose
     assert "skills@1.7.2" in prose
-    assert "--branch v0.7.1" in prose
+    assert "--branch v0.7.2" in prose
     assert "npm install fivedrisk-gateway\n" not in prose
-    assert "fivedrisk-gateway@0.7.1" in prose
+    assert "fivedrisk-gateway@0.7.2" in prose
 
 
 def test_framework_and_script_support_claims_are_bounded():
@@ -241,7 +241,7 @@ def test_portable_and_codex_manifests_share_identity_and_are_host_honest():
         "keywords",
     ):
         assert portable[field] == fallback[field]
-    assert portable["version"] == fallback["version"] == claude["version"] == "0.7.1"
+    assert portable["version"] == fallback["version"] == claude["version"] == "0.7.2"
     portable_prose = json.dumps(portable).lower()
     codex_prose = json.dumps(fallback).lower()
     assert "pretooluse" not in portable_prose
@@ -263,7 +263,7 @@ def test_plugin_auto_discovers_only_the_consultant_skill():
     skill_files = sorted(skills_root.glob("*/SKILL.md"))
     assert [path.parent.name for path in skill_files] == ["fivedrisk-setup"]
     frontmatter = skill_files[0].read_text(encoding="utf-8").split("---", 2)[1]
-    assert "  version: 0.7.1" in frontmatter
+    assert "  version: 0.7.2" in frontmatter
     assert "internal:" not in frontmatter
     shipped_text = "\n".join(
         path.read_text(encoding="utf-8")

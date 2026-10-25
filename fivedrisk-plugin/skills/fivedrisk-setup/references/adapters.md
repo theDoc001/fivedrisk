@@ -123,7 +123,7 @@ public plugin directory.
 ## Vercel AI SDK / Genkit (Node)
 
 ```bash
-npm install fivedrisk-gateway@0.7.1
+npm install fivedrisk-gateway@0.7.2
 "$PYTHON_BIN" -I -m pip install "fivedrisk>=0.7.1,<0.8.0"
 FIVEDRISK_SURFACE=gateway PYTHON_BIN="$PYTHON_BIN" \
   bash "$SKILL_ROOT/scripts/verify-install.sh"
@@ -168,7 +168,7 @@ exchange one JSON request and one JSON decision per line over standard input/out
   --log-path /absolute/path/fivedrisk-decisions.db gateway stdio
 ```
 
-Use the public [JSON-lines protocol 1 contract](https://github.com/theDoc001/fivedrisk/blob/v0.7.1/docs/gateway-protocol.md). Keep the process
+Use the public [JSON-lines protocol 1 contract](https://github.com/theDoc001/fivedrisk/blob/v0.7.2/docs/gateway-protocol.md). Keep the process
 alive rather than starting Python for every action. The caller must place the request at
 the actual pre-execution boundary and must treat startup failure, timeout, malformed
 output, an unknown decision, or a closed pipe as blocked. A transport connection alone
