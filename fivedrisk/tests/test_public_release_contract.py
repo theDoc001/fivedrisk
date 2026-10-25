@@ -372,12 +372,14 @@ def test_typescript_readme_exports_a_canonical_absolute_interpreter():
 
 
 def test_agent_instructions_route_every_publication_class_to_one_gate():
-    instructions = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    instructions = (ROOT / "docs" / "release-controls.md").read_text(encoding="utf-8")
     required = (
         "entire repository",
         "python3 -I tools/release_window.py",
         "Europe/Tirane",
+        "07:00 inclusive to 19:00\n   exclusive",
         "19:00 inclusive through 07:00 exclusive",
+        "written approval",
         "Saturday and Sunday",
         "pushing any branch or tag",
         "GitHub release",
@@ -410,7 +412,10 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     assert "default:" not in dispatch
     assert publish.count(
         "steps.metadata.outputs.version != '' && steps.state.outputs.pypi != 'matching-complete'"
-    ) == 3
+    ) == 2
+    assert publish.count("tools/release_window.py") == 1
+    assert publish.index("tools/release_window.py") < publish.index("id: metadata")
+    assert "environment: release" in publish
     assert "python -I tools/release_window.py" in gate
     assert "python3 -I tools/release_window.py" in publish
     assert "npm run test:release" in publish
@@ -422,35 +427,18 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     assert "tools/build_plugin_archive.py" in publish
     assert '--git-ref "$GITHUB_SHA"' in publish
     assert "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be" in publish
-    assert publish.index("--action package-publish") < publish.index(
-        "pypa/gh-action-pypi-publish"
-    )
-    assert publish.index("--action attestation") < publish.index(
-        "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be"
-    )
-    assert publish.index("--action tag") < publish.index('git push origin "v$VERSION"')
-    assert publish.index("--action github-release") < publish.index("gh release create")
     assert publish.index("pypa/gh-action-pypi-publish") < publish.index(
         'git push origin "v$VERSION"'
     )
     assert publish.index('git push origin "v$VERSION"') < publish.index(
         "gh release create"
     )
-    assert "FIVEDRISK_RELEASE_CANDIDATE_SHA" in publish
-    assert "FIVEDRISK_QA_VERDICT_SHA" in publish
-    assert "FIVEDRISK_RELEASE_CANDIDATE_TREE" in publish
-    assert "FIVEDRISK_QA_VERDICT_TREE" in publish
+    assert "vars." not in publish
     assert 'test "$GITHUB_EVENT_NAME" = \'workflow_dispatch\'' in publish
     assert 'test "$GITHUB_REF" = \'refs/heads/main\'' in publish
     assert 'test "$GITHUB_ACTOR" = "$REPOSITORY_OWNER"' in publish
     assert 'test "$TRIGGERING_ACTOR" = "$REPOSITORY_OWNER"' in publish
-    assert 'test "$DISPATCH_CANDIDATE_SHA" = "$RELEASE_CANDIDATE_SHA"' in publish
-    assert 'test "$RELEASE_CANDIDATE_SHA" = "$QA_VERDICT_SHA"' in publish
-    assert 'test "$RELEASE_CANDIDATE_TREE" = "$QA_VERDICT_TREE"' in publish
-    assert (
-        'test "$RELEASE_CANDIDATE_TREE" = "$(git rev-parse '
-        '\"$GITHUB_SHA^{tree}\")"'
-    ) in publish
+    assert 'test "$DISPATCH_CANDIDATE_SHA" = "$GITHUB_SHA"' in publish
 
 
 def test_publish_metadata_gate_accepts_only_the_cleared_main_tree(tmp_path):
@@ -458,7 +446,7 @@ def test_publish_metadata_gate_accepts_only_the_cleared_main_tree(tmp_path):
         encoding="utf-8"
     )
     script = _workflow_run_block(
-        publish, "Bind merged main to the independently cleared tree"
+        publish, "Bind the dispatch to the approved main commit"
     )
     sha, tree = subprocess.run(
         ("git", "rev-parse", "HEAD", "HEAD^{tree}"),
@@ -479,10 +467,6 @@ def test_publish_metadata_gate_accepts_only_the_cleared_main_tree(tmp_path):
             "DISPATCH_CANDIDATE_SHA": sha,
             "GITHUB_OUTPUT": str(tmp_path / "output"),
             "GITHUB_ENV": str(tmp_path / "environment"),
-            "RELEASE_CANDIDATE_SHA": sha,
-            "QA_VERDICT_SHA": sha,
-            "RELEASE_CANDIDATE_TREE": tree,
-            "QA_VERDICT_TREE": tree,
         }
     )
 
@@ -497,8 +481,6 @@ def test_publish_metadata_gate_accepts_only_the_cleared_main_tree(tmp_path):
     assert accepted.returncode == 0, accepted.stderr
 
     for key, value in (
-        ("QA_VERDICT_TREE", ""),
-        ("RELEASE_CANDIDATE_TREE", "0" * 40),
         ("GITHUB_EVENT_NAME", "schedule"),
         ("GITHUB_REF", "refs/heads/release/0.7.1"),
         ("DISPATCH_CANDIDATE_SHA", ""),
@@ -522,8 +504,7 @@ def test_publish_metadata_gate_accepts_only_the_cleared_main_tree(tmp_path):
 
     for candidate in ("qa-subject", "HEAD", "0" * 40, tree):
         denied_environment = base | {
-            "RELEASE_CANDIDATE_SHA": candidate,
-            "QA_VERDICT_SHA": candidate,
+            "DISPATCH_CANDIDATE_SHA": candidate,
             "GITHUB_OUTPUT": str(tmp_path / f"denied-sha-{candidate}"),
         }
         denied = subprocess.run(
