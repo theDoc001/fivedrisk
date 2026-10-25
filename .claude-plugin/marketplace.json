@@ -1,0 +1,20 @@
+{
+  "name": "fivedrisk",
+  "description": "5D setup skill for profiling, configuring, and verifying the fivedrisk action-policy gate.",
+  "owner": {
+    "name": "Loren Angoni",
+    "url": "https://github.com/theDoc001"
+  },
+  "plugins": [
+    {
+      "name": "fivedrisk",
+      "description": "Hooks-free 5D setup skill: deployment consultation, policy configuration, and verification guidance. Advisory only; enforcement needs a supported runtime adapter.",
+      "version": "0.7.1",
+      "source": {
+        "source": "archive",
+        "url": "https://github.com/theDoc001/fivedrisk/releases/download/v0.7.1/fivedrisk-plugin-public-0.7.1.zip",
+        "sha256": "f2adbee8cb79c9f92055c8980cb535ee35ad58d0c22394241bbbd89061d0cd2e"
+      }
+    }
+  ]
+}

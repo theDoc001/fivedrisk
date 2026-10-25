@@ -64,7 +64,15 @@ confidential content. Confirm the extracted facts before generating runtime poli
 For manual hook installation, review `manual/README.md` inside the manual ZIP or the
 [manual integration guide](https://github.com/theDoc001/fivedrisk/tree/main/fivedrisk-plugin/manual).
 The source directory contains that manual integration; do not upload the whole directory
-to a public-directory portal. No Claude marketplace entry is claimed.
+to a public-directory portal.
+
+In Claude Code, the same hooks-free advisory package installs from this repository's
+marketplace. The entry pins the public 0.7.1 release ZIP by SHA-256 and contains no hooks:
+
+```text
+/plugin marketplace add theDoc001/fivedrisk
+/plugin install fivedrisk@fivedrisk
+```
 
 Public directory submission still requires publisher-owned listing/privacy information,
 host installation/onboarding checks, and portal review. The manifest does not invent
