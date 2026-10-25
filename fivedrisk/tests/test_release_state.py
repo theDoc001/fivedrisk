@@ -84,7 +84,9 @@ def test_release_allows_matching_partial_and_draft_but_rejects_conflicts():
 @pytest.mark.parametrize(
     ("pypi", "tag", "release"),
     [
-        ("absent", "matching", "absent"),
+        ("absent", "absent", "absent"),
+        ("absent", "matching", "matching-partial"),
+        ("matching-partial", "matching", "matching-partial"),
         ("matching-partial", "absent", "matching-partial"),
         ("matching-complete", "absent", "matching-partial"),
     ],
@@ -92,6 +94,20 @@ def test_release_allows_matching_partial_and_draft_but_rejects_conflicts():
 def test_out_of_order_state_fails_closed(pypi: str, tag: str, release: str):
     with pytest.raises(release_state.ReleaseStateError, match="out-of-order"):
         release_state.validate_order(pypi, tag, release)
+
+
+@pytest.mark.parametrize(
+    ("pypi", "tag", "release"),
+    [
+        ("absent", "matching", "absent"),
+        ("matching-partial", "matching", "absent"),
+        ("matching-complete", "matching", "absent"),
+        ("matching-complete", "matching", "matching-partial"),
+        ("matching-complete", "matching", "matching-complete"),
+    ],
+)
+def test_tag_first_publication_states_are_accepted(pypi: str, tag: str, release: str):
+    release_state.validate_order(pypi, tag, release)
 
 
 def test_expected_artifacts_rejects_symlinks_even_with_matching_manifest(tmp_path: Path):

@@ -159,10 +159,12 @@ def classify_release(
 
 
 def validate_order(pypi: str, tag: str, release: str) -> None:
-    if pypi != "matching-complete" and (tag != "absent" or release != "absent"):
-        raise ReleaseStateError("out-of-order state: tag/release exists before PyPI is complete")
-    if tag == "absent" and release != "absent":
-        raise ReleaseStateError("out-of-order state: release exists before tag")
+    # The pushed release tag starts publication, so the tag legitimately exists
+    # before PyPI. The GitHub release must still wait for a complete PyPI upload.
+    if tag == "absent":
+        raise ReleaseStateError("out-of-order state: publication requires the release tag")
+    if pypi != "matching-complete" and release != "absent":
+        raise ReleaseStateError("out-of-order state: release exists before PyPI is complete")
 
 
 def _json_url(url: str, *, missing_is_none: bool = False) -> dict | None:
