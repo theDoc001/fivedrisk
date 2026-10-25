@@ -22,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require the release window (weekdays 07:00-19:00 Europe/Tirane are blocked)
+      - name: Require the release window
         run: python3 -I tools/release_window.py --action workflow-dispatch
 
       - id: metadata

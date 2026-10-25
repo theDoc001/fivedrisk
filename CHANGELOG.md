@@ -72,8 +72,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The legacy instruction-only `five-d-score` skill was removed because its static weights
   and verdict thresholds duplicated and could contradict the configured runtime. Use
   `fivedrisk-setup` with a supported runtime adapter instead.
-- A fail-closed Europe/Tirane release-window gate, tracked pre-push hook, agent routing
-  instructions, and gated release workflows constrain external mutations to 19:00-07:00.
+- A fail-closed release-window gate, tracked pre-push hook, and gated release workflows
+  constrain external mutations to a configured publication window.
 - Release-gate invocations now use isolated Python so `PYTHONPATH` cannot shadow timezone
   logic. A fresh-clone installer activates and verifies the tracked hook, and managed
   GitHub rulesets protect the default branch and make release tags immutable.

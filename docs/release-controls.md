@@ -12,9 +12,7 @@ entire repository, to people and to agents.
    submitting or updating a plugin, skill, or marketplace listing; changing remote
    repository rules or release settings; and dispatching a workflow that can do any
    of these.
-3. External mutations are blocked Monday through Friday from 07:00 inclusive to 19:00
-   exclusive in `Europe/Tirane`. Saturday and Sunday are open all day. Monday through
-   Friday the window is open from 19:00 inclusive through 07:00 exclusive.
+3. External mutations run only inside the configured publication window.
 4. Check the window with `python3 -I tools/release_window.py --action <action>` and
    proceed only on exit 0. Do not calculate the window yourself, override the
    timezone, use `--no-verify`, or bypass Git hooks. A missing clock, timezone

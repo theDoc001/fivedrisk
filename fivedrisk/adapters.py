@@ -3,8 +3,7 @@
 Extracted from ``gateway.score_action_dict`` so every adapter (CrewAI, OpenAI, ADK,
 Pydantic AI, the config MCP, TS-over-gateway, the setup skill) shares ONE scoring path
 and ONE band→sentinel map instead of re-deriving the flow. Reuse-first: this calls the
-already-shipped scan / classify / score / drift layers. It constructs NO new score and
-NO fused cost×risk (that boundary stays out of OSS).
+already-shipped scan / classify / score / drift layers. It constructs no new score.
 
 Adapter authors need two things:
   * ``to_verdict(tool_name, tool_input, ...) -> Verdict`` — the shared decision.

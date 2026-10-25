@@ -39,8 +39,8 @@ yellow_model_escalation: false    # opt in to a model-class bump on YELLOW
 ## 3. Session budget cap (cost control, not risk)
 
 `BudgetAccumulator` enforces a per-session token ceiling with worst-case
-reservation. It is deny-based cost *control* — it is NOT combined with the risk
-band (no fused cost×risk score).
+reservation. It is deny-based cost *control* and is independent of the risk
+band.
 
 ```yaml
 # policy.yaml
