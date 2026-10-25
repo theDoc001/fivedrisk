@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Release documentation describes the publication window without schedule details.
 - Plugin manifests, release ZIP names, and install references move to 0.7.2. No runtime
   behavior changes from 0.7.1.
+- Simpler release path: an annotated `v*` tag on `main` starts publication, which still
+  waits for the owner's approval. The audit-only release-window workflow is removed, CI
+  runs once per push or pull request, and the benchmark runs only when scored code
+  changes. `main` keeps protection against deletion and force-push.
 
 ## [0.7.1] - 2026-10-06
 

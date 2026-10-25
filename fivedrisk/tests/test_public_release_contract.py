@@ -391,30 +391,26 @@ def test_agent_instructions_route_every_publication_class_to_one_gate():
         assert phrase in instructions
 
 
-def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
-    gate = (ROOT / ".github" / "workflows" / "release-gate.yml").read_text(
-        encoding="utf-8"
-    )
+def test_release_workflow_publishes_only_from_an_owner_tag_on_main():
     publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text(
         encoding="utf-8"
     )
-    combined = (gate + publish).lower()
-    assert "--force" not in combined
-    assert publish.count("workflow_dispatch:") == 1
+    workflows = ROOT / ".github" / "workflows"
+    assert not (workflows / "release-gate.yml").exists()
+    assert "--force" not in publish.lower()
+    assert "workflow_dispatch" not in publish
     assert "schedule:" not in publish
     assert "cron:" not in publish
-    dispatch = publish.split("workflow_dispatch:", 1)[1].split("permissions:", 1)[0]
-    assert "candidate_sha:" in dispatch
-    assert "required: true" in dispatch
-    assert "default:" not in dispatch
+    trigger = publish.split("on:", 1)[1].split("permissions:", 1)[0]
+    assert 'tags: ["v*"]' in trigger
+    assert "branches" not in trigger
+    assert "environment: release" in publish
+    assert publish.count("tools/release_window.py") == 1
+    assert publish.index("tools/release_window.py") < publish.index("id: metadata")
+    assert "python3 -I tools/release_window.py" in publish
     assert publish.count(
         "steps.metadata.outputs.version != '' && steps.state.outputs.pypi != 'matching-complete'"
     ) == 2
-    assert publish.count("tools/release_window.py") == 1
-    assert publish.index("tools/release_window.py") < publish.index("id: metadata")
-    assert "environment: release" in publish
-    assert "python -I tools/release_window.py" in gate
-    assert "python3 -I tools/release_window.py" in publish
     assert "npm run test:release" in publish
     assert "build==1.5.0" in publish
     assert "setuptools==82.0.1" in publish
@@ -424,92 +420,84 @@ def test_release_workflows_have_no_time_bypass_and_recheck_mutations():
     assert "tools/build_plugin_archive.py" in publish
     assert '--git-ref "$GITHUB_SHA"' in publish
     assert "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be" in publish
-    assert publish.index("pypa/gh-action-pypi-publish") < publish.index(
-        'git push origin "v$VERSION"'
-    )
-    assert publish.index('git push origin "v$VERSION"') < publish.index(
-        "gh release create"
-    )
+    assert 'git push origin "v$VERSION"' not in publish
+    assert publish.index("pypa/gh-action-pypi-publish") < publish.index("gh release create")
     assert "vars." not in publish
-    assert 'test "$GITHUB_EVENT_NAME" = \'workflow_dispatch\'' in publish
-    assert 'test "$GITHUB_REF" = \'refs/heads/main\'' in publish
+    assert 'test "$GITHUB_EVENT_NAME" = \'push\'' in publish
+    assert 'test "$GITHUB_REF" = "refs/tags/v$version"' in publish
     assert 'test "$GITHUB_ACTOR" = "$REPOSITORY_OWNER"' in publish
     assert 'test "$TRIGGERING_ACTOR" = "$REPOSITORY_OWNER"' in publish
-    assert 'test "$DISPATCH_CANDIDATE_SHA" = "$GITHUB_SHA"' in publish
+    assert 'git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD' in publish
 
 
-def test_publish_metadata_gate_accepts_only_the_cleared_main_tree(tmp_path):
+def _git(cwd, *args):
+    return subprocess.run(
+        ("git", *args), cwd=cwd, check=True, capture_output=True, text=True,
+        env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+             "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"},
+    ).stdout.strip()
+
+
+def test_publish_metadata_gate_accepts_only_an_owner_tag_on_main(tmp_path):
     publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text(
         encoding="utf-8"
     )
-    script = _workflow_run_block(
-        publish, "Bind the dispatch to the approved main commit"
-    )
-    sha, tree = subprocess.run(
-        ("git", "rev-parse", "HEAD", "HEAD^{tree}"),
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.splitlines()
-    base = os.environ.copy()
-    base.update(
-        {
-            "GITHUB_EVENT_NAME": "workflow_dispatch",
-            "GITHUB_REF": "refs/heads/main",
+    script = _workflow_run_block(publish, "Bind the release tag to a commit on main")
+    origin = tmp_path / "origin.git"
+    work = tmp_path / "work"
+    _git(tmp_path, "init", "-q", "--bare", str(origin))
+    _git(tmp_path, "init", "-q", "-b", "main", str(work))
+    (work / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "9.8.7"\n')
+    _git(work, "add", "pyproject.toml")
+    _git(work, "commit", "-q", "-m", "release")
+    _git(work, "remote", "add", "origin", str(origin))
+    _git(work, "push", "-q", "origin", "main")
+    on_main = _git(work, "rev-parse", "HEAD")
+    _git(work, "switch", "-q", "-c", "side")
+    (work / "side.txt").write_text("side\n")
+    _git(work, "add", "side.txt")
+    _git(work, "commit", "-q", "-m", "side")
+    off_main = _git(work, "rev-parse", "HEAD")
+
+    def run(sha, **overrides):
+        _git(work, "checkout", "-q", "--detach", sha)
+        env = {
+            **os.environ,
+            "GITHUB_EVENT_NAME": "push",
+            "GITHUB_REF": "refs/tags/v9.8.7",
             "GITHUB_SHA": sha,
             "GITHUB_ACTOR": "theDoc001",
             "REPOSITORY_OWNER": "theDoc001",
             "TRIGGERING_ACTOR": "theDoc001",
-            "DISPATCH_CANDIDATE_SHA": sha,
             "GITHUB_OUTPUT": str(tmp_path / "output"),
             "GITHUB_ENV": str(tmp_path / "environment"),
+            **overrides,
         }
-    )
-
-    accepted = subprocess.run(
-        ("bash", "-eu", "-o", "pipefail", "-c", script),
-        cwd=ROOT,
-        env=base,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert accepted.returncode == 0, accepted.stderr
-
-    for key, value in (
-        ("GITHUB_EVENT_NAME", "schedule"),
-        ("GITHUB_REF", "refs/heads/release/0.7.1"),
-        ("DISPATCH_CANDIDATE_SHA", ""),
-        ("DISPATCH_CANDIDATE_SHA", "0" * 40),
-        ("GITHUB_ACTOR", "not-owner"),
-        ("TRIGGERING_ACTOR", "not-owner"),
-    ):
-        denied_environment = base | {key: value}
-        denied_environment["GITHUB_OUTPUT"] = str(tmp_path / f"denied-{key}")
-        denied_environment["GITHUB_ENV"] = str(tmp_path / f"denied-env-{key}")
-        denied = subprocess.run(
+        for name in ("output", "environment"):
+            (tmp_path / name).unlink(missing_ok=True)
+        return subprocess.run(
             ("bash", "-eu", "-o", "pipefail", "-c", script),
-            cwd=ROOT,
-            env=denied_environment,
-            capture_output=True,
-            text=True,
-            check=False,
+            cwd=work, env=env, capture_output=True, text=True, check=False,
         )
-        assert denied.returncode != 0, key
-        assert not Path(denied_environment["GITHUB_OUTPUT"]).exists(), key
 
-    for candidate in ("qa-subject", "HEAD", "0" * 40, tree):
-        denied_environment = base | {
-            "DISPATCH_CANDIDATE_SHA": candidate,
-            "GITHUB_OUTPUT": str(tmp_path / f"denied-sha-{candidate}"),
-        }
-        denied = subprocess.run(
-            ("bash", "-eu", "-o", "pipefail", "-c", script), cwd=ROOT,
-            env=denied_environment, capture_output=True, text=True, check=False,
-        )
-        assert denied.returncode != 0, candidate
-        assert not Path(denied_environment["GITHUB_OUTPUT"]).exists(), candidate
+    accepted = run(on_main)
+    assert accepted.returncode == 0, accepted.stderr
+    assert "version=9.8.7" in (tmp_path / "output").read_text()
+
+    for overrides in (
+        {"GITHUB_EVENT_NAME": "workflow_dispatch"},
+        {"GITHUB_REF": "refs/tags/v9.8.8"},
+        {"GITHUB_REF": "refs/heads/main"},
+        {"GITHUB_ACTOR": "not-owner"},
+        {"TRIGGERING_ACTOR": "not-owner"},
+    ):
+        denied = run(on_main, **overrides)
+        assert denied.returncode != 0, overrides
+        assert not (tmp_path / "output").exists(), overrides
+
+    off = run(off_main)
+    assert off.returncode != 0
+    assert not (tmp_path / "output").exists()
 
 
 def test_release_workflows_pin_benchmark_runtime_to_baseline():

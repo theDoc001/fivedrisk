@@ -31,31 +31,6 @@ def desired_rulesets() -> list[dict]:
             "rules": [
                 {"type": "deletion"},
                 {"type": "non_fast_forward"},
-                {
-                    "type": "pull_request",
-                    "parameters": {
-                        "allowed_merge_methods": ["squash", "merge", "rebase"],
-                        "automatic_copilot_code_review_enabled": False,
-                        "dismiss_stale_reviews_on_push": False,
-                        "require_code_owner_review": False,
-                        "require_last_push_approval": False,
-                        "required_approving_review_count": 0,
-                        "required_review_thread_resolution": False,
-                    },
-                },
-                {
-                    "type": "required_status_checks",
-                    "parameters": {
-                        "do_not_enforce_on_create": True,
-                        "strict_required_status_checks_policy": True,
-                        "required_status_checks": [
-                            {"context": "release-window"},
-                            {"context": "pytest (3.10)"},
-                            {"context": "pytest (3.12)"},
-                            {"context": "typescript-release"},
-                        ],
-                    },
-                },
             ],
         },
         {

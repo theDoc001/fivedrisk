@@ -3,6 +3,10 @@ name: benchmark
 on:
   pull_request:
     branches: [main]
+    paths: ["fivedrisk/**", "benchmarks/**", "pyproject.toml"]
+  push:
+    branches: [main]
+    paths: ["fivedrisk/**", "benchmarks/**", "pyproject.toml"]
 
 permissions:
   contents: read
@@ -11,8 +15,8 @@ jobs:
   bench:
     runs-on: macos-latest
     env:
-      BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       BASE_TREE: ${{ github.workspace }}/.bench/base
       CANDIDATE_TREE: ${{ github.workspace }}/.bench/candidate
 
@@ -20,14 +24,14 @@ jobs:
       - name: Check out frozen base
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.base.sha || github.event.before }}
           path: .bench/base
           persist-credentials: false
 
       - name: Check out frozen candidate
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           path: .bench/candidate
           persist-credentials: false
 

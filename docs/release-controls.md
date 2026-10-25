@@ -38,7 +38,8 @@ Before a publication task, `git config --get core.hooksPath` must print `.githoo
   `publish.yml`, environment `release`.
 - GitHub environment `release` with the owner as required reviewer, so every publish
   run waits for an explicit approval click.
-- Managed rulesets, applied during an open window:
+- Managed rulesets: `main` cannot be deleted or force-pushed, and `v*` tags cannot be
+  moved or deleted once created. Apply them during an open window:
 
 ```bash
 python3 -I tools/release_window.py --action ruleset-update
@@ -46,23 +47,33 @@ python3 -I tools/repository_rulesets.py --apply --repository theDoc001/fivedrisk
 python3 -I tools/repository_rulesets.py --check --repository theDoc001/fivedrisk
 ```
 
-These require pull requests and the release-window, Python, and TypeScript checks on
-the default branch, and make `v*` tags immutable after creation.
+## Continuous integration
+
+`tests.yml` runs the Python suite (3.10 and 3.12) and the TypeScript release suite on
+every push to `main` and every pull request. `bench.yml` runs the paired benchmark only
+when scored code, benchmarks, or `pyproject.toml` change.
 
 ## Releasing
 
-1. Bump `version` in `pyproject.toml` and both plugin manifests, merge to `main`
-   through a pull request with green checks.
+1. Bump `version` in `pyproject.toml`, the three plugin manifests, the skill's
+   `metadata.version`, and the TypeScript client, add a CHANGELOG entry, and push to
+   `main`. Wait for green CI.
 2. The owner approves the release in writing.
-3. During an open window, the owner runs **Publish release** from `main` with the
-   full `main` commit SHA as `candidate_sha`, then approves the `release` environment.
-4. The workflow checks the window once, binds the run to that exact commit, runs the
-   Python and TypeScript release suites, builds the wheel, the sdist,
-   `fivedrisk-plugin-public-<version>.zip` (hooks-free, directory candidate) and
+3. Create and push an annotated tag on that commit during an open window:
+
+```bash
+git tag -a v0.7.2 -m "fivedrisk 0.7.2"
+git push origin v0.7.2
+```
+
+4. **Publish release** starts from the tag. The owner approves the `release`
+   environment. The workflow checks the window, confirms the tag matches
+   `pyproject.toml` and sits on `main`, runs both release suites, builds the wheel, the
+   sdist, `fivedrisk-plugin-public-<version>.zip` (hooks-free) and
    `fivedrisk-plugin-manual-<version>.zip` (local hook integration), writes
-   `SHA256SUMS`, attests provenance, then publishes PyPI, the annotated tag, and the
-   GitHub release in that order. A matching partial release resumes; any wrong
-   digest, SHA, tag, or asset stops without overwriting or deleting anything.
+   `SHA256SUMS`, attests provenance, then publishes PyPI and the GitHub release. A
+   matching partial release resumes; any wrong digest, tag, or asset stops without
+   overwriting or deleting anything.
 5. Read back PyPI, the tag, and the release assets.
 
 Plugin portal submissions (OpenAI directory, skills.sh, Tessl) stay manual. Never
@@ -71,7 +82,3 @@ upload the manual ZIP or the source directory to a public plugin portal.
 The workflow records checksums and provenance for that exact build. It does not claim
 bit-for-bit environment reproducibility: Python dependency ranges resolve when the job
 runs, while external GitHub Actions are pinned to reviewed full commit SHAs.
-
-GitHub rulesets cannot stop an already-authorized credential from pushing an ordinary
-branch. The pre-push hook stops that for conforming agents. For a hard boundary, do not
-give agents raw push or publication credentials.
