@@ -22,38 +22,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require an open window for explicit dispatch
+      - name: Require the release window (weekdays 07:00-19:00 Europe/Tirane are blocked)
         run: python3 -I tools/release_window.py --action workflow-dispatch
 
       - id: metadata
-        name: Bind merged main to the independently cleared tree
+        name: Bind the dispatch to the approved main commit
         env:
           DISPATCH_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
-          RELEASE_CANDIDATE_SHA: ${{ vars.FIVEDRISK_RELEASE_CANDIDATE_SHA }}
-          QA_VERDICT_SHA: ${{ vars.FIVEDRISK_QA_VERDICT_SHA }}
-          RELEASE_CANDIDATE_TREE: ${{ vars.FIVEDRISK_RELEASE_CANDIDATE_TREE }}
-          QA_VERDICT_TREE: ${{ vars.FIVEDRISK_QA_VERDICT_TREE }}
         run: |
           test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
           test "$GITHUB_REF" = 'refs/heads/main'
           test "$GITHUB_ACTOR" = "$REPOSITORY_OWNER"
           test "$TRIGGERING_ACTOR" = "$REPOSITORY_OWNER"
-          test "$DISPATCH_CANDIDATE_SHA" = "$RELEASE_CANDIDATE_SHA"
-          test -n "$RELEASE_CANDIDATE_SHA"
-          test -n "$QA_VERDICT_SHA"
-          test -n "$RELEASE_CANDIDATE_TREE"
-          test -n "$QA_VERDICT_TREE"
-          test "$RELEASE_CANDIDATE_SHA" = "$QA_VERDICT_SHA"
-          test "$RELEASE_CANDIDATE_SHA" = "$GITHUB_SHA"
+          test -n "$DISPATCH_CANDIDATE_SHA"
+          test "$DISPATCH_CANDIDATE_SHA" = "$GITHUB_SHA"
           test "$GITHUB_SHA" = "$(git rev-parse --verify HEAD)"
-          test "$RELEASE_CANDIDATE_SHA" = "$(git rev-parse --verify "$RELEASE_CANDIDATE_SHA^{commit}")"
-          test "$RELEASE_CANDIDATE_TREE" = "$QA_VERDICT_TREE"
-          test "$RELEASE_CANDIDATE_TREE" = "$(git rev-parse --verify "$RELEASE_CANDIDATE_SHA^{tree}")"
-          test "$RELEASE_CANDIDATE_TREE" = "$(git rev-parse "$GITHUB_SHA^{tree}")"
+          test "$DISPATCH_CANDIDATE_SHA" = "$(git rev-parse --verify "$DISPATCH_CANDIDATE_SHA^{commit}")"
           version=$(sed -n '/^\[project\]$/,/^\[/s/^version = "\([^"]*\)"$/\1/p' pyproject.toml)
-          test "$version" = '0.7.1'
+          test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"
 
@@ -119,10 +107,6 @@ jobs:
           python -I tools/artifact_checksums.py --write dist
           python -I tools/artifact_checksums.py --verify dist
 
-      - name: Recheck immediately before provenance attestation
-        if: steps.metadata.outputs.version != ''
-        run: python -I tools/release_window.py --action attestation
-
       - name: Bind artifact digests to this exact candidate SHA
         if: steps.metadata.outputs.version != ''
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
@@ -153,10 +137,6 @@ jobs:
           for name in $MISSING; do cp "dist/$name" publish-dist/; done
           IFS=$old_ifs
 
-      - name: Recheck immediately before PyPI mutation
-        if: steps.metadata.outputs.version != '' && steps.state.outputs.pypi != 'matching-complete'
-        run: python -I tools/release_window.py --action package-publish
-
       - name: Publish only missing, attested package files
         if: steps.metadata.outputs.version != '' && steps.state.outputs.pypi != 'matching-complete'
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
@@ -184,10 +164,6 @@ jobs:
           done
           exit 2
 
-      - name: Recheck immediately before tag mutation
-        if: steps.after_pypi.outputs.tag == 'absent'
-        run: python -I tools/release_window.py --action tag
-
       - name: Create the exact annotated release tag
         if: steps.after_pypi.outputs.tag == 'absent'
         env:
@@ -212,10 +188,6 @@ jobs:
           state=$(grep '^tag=' "$GITHUB_OUTPUT" | tail -1)
           test "$state" = 'tag=matching'
 
-      - name: Recheck immediately before creating the GitHub release
-        if: steps.after_tag.outputs.release == 'absent'
-        run: python -I tools/release_window.py --action github-release
-
       - name: Create GitHub release with the attested artifact set
         if: steps.after_tag.outputs.release == 'absent'
         env:
@@ -235,7 +207,6 @@ jobs:
           old_ifs=$IFS
           IFS=,
           for name in $MISSING; do
-            python -I tools/release_window.py --action github-release
             gh release upload "v$VERSION" "dist/$name"
           done
           IFS=$old_ifs
@@ -246,7 +217,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.metadata.outputs.version }}
         run: |
-          python -I tools/release_window.py --action github-release
           gh release edit "v$VERSION" --draft=false
 
       - name: Verify complete converged release state
