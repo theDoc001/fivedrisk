@@ -102,9 +102,7 @@ keep both vocabularies for compatibility and are not changing.
 - **ALLOW / LOG_ELEVATED / ESCALATE / BLOCK pitch set** — map onto the disposition
   ladder above; the canonical names are the ladder's.
 
-## Patent boundary
+## Scope of this taxonomy
 
-This taxonomy describes **bands and dispositions only**. It deliberately says
-nothing about coupling severity to token cost — fivedrisk OSS keeps cost *control*
-(budget accumulation) strictly separate from severity, and constructs no fused
-cost×risk score.
+This taxonomy describes **bands and dispositions only**. Cost *control* (budget
+accumulation) is a separate mechanism and does not change severity.

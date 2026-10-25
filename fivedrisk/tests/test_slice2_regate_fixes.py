@@ -7,7 +7,7 @@ Covers these canonical-matcher changes:
   * F-D — ``fivedrisk validate`` WARNS when a floor rule is keyed only on axes score() cannot
     supply (data_classes/list_ref) so an OSS deployer cannot author a silently-inert hard control.
 
-Deterministic, offline. Patent-safe (boolean validators + membership axes, no fused score).
+Deterministic, offline (boolean validators + membership axes).
 """
 from __future__ import annotations
 

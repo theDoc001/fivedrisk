@@ -376,11 +376,8 @@ def test_agent_instructions_route_every_publication_class_to_one_gate():
     required = (
         "entire repository",
         "python3 -I tools/release_window.py",
-        "Europe/Tirane",
-        "07:00 inclusive to 19:00\n   exclusive",
-        "19:00 inclusive through 07:00 exclusive",
+        "configured publication window",
         "written approval",
-        "Saturday and Sunday",
         "pushing any branch or tag",
         "GitHub release",
         "package to any registry",

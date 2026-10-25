@@ -2,7 +2,7 @@ r"""Slice-2 fix wave (build pass, then independent QA re-gate). Three OSS-side f
 
 1. Check-digit VALIDATORS (`iban_mod97`, `luhn`) + the `checksum` red-line axis — the G2 tier-1
    floor boundary. Property-tested against PUBLISHED valid/invalid vectors. Pure booleans, no LLM,
-   no score, patent-safe.
+   no score.
 2. `matched_floor` / `_parse_floor_rules` multi-axis fail-OPEN (audit U3/DUP3): a multi-axis floor
    rule was un-authorable from YAML AND silently ignored by `score()`. Now `_parse_floor_rules`
    authors the axes and `matched_floor` delegates to the ONE canonical matcher, so it enforces.

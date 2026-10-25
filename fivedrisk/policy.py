@@ -151,7 +151,7 @@ def _literal_contains(needle: str, haystack: str) -> bool:
     return needle in haystack
 
 
-# ─── Deterministic check-digit validators (patent-safe: pure booleans, no score, no fusion) ───
+# ─── Deterministic check-digit validators (pure booleans, no score) ───
 # The G2 pattern-floor boundary: a structural pattern may be a tier-1 hard block ONLY when a
 # check digit confirms the identifier is genuinely valid — otherwise a format-only match false-
 # blocks ~90-99% of look-alikes (measured). These validate; they never classify or score.
@@ -392,7 +392,7 @@ def _expiry_shaped(group: str) -> bool:
 def _iin_plausible(digits: str) -> bool:
     """True when a candidate starts inside a published card-issuer (IIN/BIN) range.
 
-    A NARROWING CONJUNCT, not a classifier: pure boolean, no score, no fusion (patent-safe).
+    A NARROWING CONJUNCT, not a classifier: pure boolean, no score.
     Luhn alone accepts ~1 in 10 arbitrary digit runs; requiring a real issuer prefix cuts that
     by ~3x. Measured recall cost: 0/12000 synthetic PANs rejected across Visa, Mastercard (both
     51-55 and the 2221-2720 2-series), Amex, Discover, Diners, JCB and UnionPay — so it is
@@ -828,7 +828,7 @@ class FieldValuePredicate:
     ``value_match`` resolves ``field`` case-insensitively on the tool_input KEY, then runs the
     predicate scoped to THAT field's value ONLY, reusing the shipped predicate helpers
     (``_patterns_hit`` for ``kind="regex"``, ``_literal_contains`` for ``"literal"``,
-    ``_checksum_hit`` for ``"checksum"``). Pure boolean — no score, no fusion (patent-safe).
+    ``_checksum_hit`` for ``"checksum"``). Pure boolean, no score.
 
     ``mode`` mirrors :class:`AxisPredicate`: ``"block"`` fires when the value IS in/matches
     ``values``; ``"allow"`` fires when it is NOT (off-allowlist), OR when the field is ABSENT
@@ -1244,7 +1244,7 @@ def _value_match_hit(pred: "FieldValuePredicate", tool_input: Dict[str, Any]) ->
 def _checksum_hit(pred: AxisPredicate, text: "str | list[str]") -> bool:
     """A checksum axis is TRUE (block-mode) when the action carries a token that PASSES one of the
     named check-digit validators (``iban_mod97`` / ``luhn``). Pure boolean validation — no LLM,
-    no score, patent-safe. Unknown validator names contribute nothing (fail-safe: they are
+    no score. Unknown validator names contribute nothing (fail-safe: they are
     rejected at config-load, so this is only reached for a known set).
 
     ``text`` is a LIST of per-field values, each scanned on its own. A single joined haystack let
