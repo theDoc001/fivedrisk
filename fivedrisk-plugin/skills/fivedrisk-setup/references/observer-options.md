@@ -6,7 +6,7 @@ TypeSafe Jev integration. The repository's Ollama observer is benchmark-only.
 
 ## Non-negotiable precedence
 
-Use this fusion rule:
+Use this precedence rule:
 
 `final severity = max(deterministic severity, semantic escalation)`
 
